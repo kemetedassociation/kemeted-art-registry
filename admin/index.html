@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Espace KEMETED · Registre</title>
+  <link rel="icon" href="../assets/logo.png">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <main class="wrap" id="main"></main>
+  <script type="module">
+    import { chrome, esc, fmtDate, toast, STATUS } from "../assets/ui.js";
+    import * as store from "../assets/store.js";
+    import { config } from "../assets/config.js";
+    chrome("../", { admin: true });
+
+    const main = document.getElementById("main");
+    const ROOT = new URL("../", location.href).href; // racine publique du site
+    const publicUrl = (id) => `${ROOT}a/?id=${encodeURIComponent(id)}`;
+    const busy = async (btn, fn) => {
+      btn.disabled = true;
+      try { await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; }
+    };
+    const formData = (form) => {
+      const o = {};
+      for (const el of form.elements) {
+        if (!el.name) continue;
+        if (el.type === "checkbox") o[el.name] = el.checked;
+        else if (el.type === "number") o[el.name] = el.value === "" ? null : Number(el.value);
+        else if (el.type !== "file") o[el.name] = el.value.trim() === "" ? null : el.value.trim();
+      }
+      return o;
+    };
+
+    // ── Connexion ──
+    const user = await store.currentAdmin();
+    if (!user) {
+      main.innerHTML = `<form class="panel login stack" id="login">
+        <h2>Espace KEMETED</h2>
+        <p class="muted small">Réservé aux administrateurs du registre.</p>
+        ${user === false ? `<p class="small" style="color:var(--bad)">Ce compte n'est pas administrateur.</p>` : ""}
+        <div><label>E-mail</label><input name="email" type="email" required autocomplete="username"></div>
+        <div><label>Mot de passe</label><input name="password" type="password" required autocomplete="current-password"></div>
+        <button class="btn">Se connecter</button></form>`;
+      document.getElementById("login").onsubmit = async (e) => {
+        e.preventDefault();
+        const { email, password } = formData(e.target);
+        try { await store.signIn(email, password); location.reload(); } catch (err) { toast(err.message, true); }
+      };
+      throw new Error("non connecté");
+    }
+
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;padding-top:32px">
+        <div><div class="eyebrow">Espace KEMETED</div><h1 style="font-size:2.4rem">Registre des œuvres</h1></div>
+        <div style="display:flex;gap:8px">
+          ${store.DEMO ? `<button class="btn ghost small" id="reset">Réinitialiser la démo</button>` : `<button class="btn ghost small" id="logout">Déconnexion</button>`}
+        </div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button data-tab="artworks">Œuvres</button><button data-tab="artists">Artistes</button>
+        <button data-tab="exhibitions">Expositions</button><button data-tab="scans">Journal des scans</button>
+      </div>
+      <div id="view"></div>`;
+    document.getElementById("reset")?.addEventListener("click", () => { store.resetDemo(); location.hash = ""; location.reload(); });
+    document.getElementById("logout")?.addEventListener("click", async () => { await store.signOut(); location.reload(); });
+    const view = document.getElementById("view");
+
+    // ── Routage simple par ancre : #artworks, #artwork/KEM-CUL-0001, #artwork/new, #artists… ──
+    async function route() {
+      const [tab, arg] = (location.hash.slice(1) || "artworks").split("/");
+      document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === (tab === "artwork" ? "artworks" : tab)));
+      view.innerHTML = `<p class="muted">Chargement…</p>`;
+      try {
+        if (tab === "artwork") await artworkEditor(arg === "new" ? null : decodeURIComponent(arg));
+        else if (tab === "artists") await artistsView();
+        else if (tab === "exhibitions") await exhibitionsView();
+        else if (tab === "scans") await scansView();
+        else await artworksView();
+      } catch (e) { view.innerHTML = `<p style="color:var(--bad)">${esc(e.message)}</p>`; }
+    }
+    document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => (location.hash = b.dataset.tab)));
+    addEventListener("hashchange", route);
+
+    // ── Liste des œuvres ──
+    async function artworksView() {
+      const [works, tags] = await Promise.all([store.listArtworks({ all: true }), store.listTags()]);
+      view.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span class="muted small">${works.length} œuvre(s)</span><a class="btn small" href="#artwork/new">+ Enregistrer une œuvre</a></div>
+        <div class="table-scroll"><table class="list"><thead><tr><th></th><th>Référence</th><th>Œuvre</th><th>Statut</th><th>Puce NFC</th><th>NFT</th><th>Publiée</th></tr></thead><tbody>
+        ${works.map((a) => `<tr class="clickable" data-id="${esc(a.id)}">
+          <td>${a.image_url ? `<img class="thumb" src="${esc(a.image_url)}" alt="">` : `<div class="thumb"></div>`}</td>
+          <td class="mono">${esc(a.id)}</td>
+          <td><b>${esc(a.title)}</b><div class="muted small">${esc(a.artists?.name)}${a.year ? " · " + a.year : ""}</div></td>
+          <td><span class="pill ${STATUS[a.status]?.tone ?? ""}">${STATUS[a.status]?.label}</span></td>
+          <td>${tags.some((t) => t.artwork_id === a.id && !t.revoked) ? `<span class="pill good">Liée</span>` : `<span class="pill warn">À poser</span>`}</td>
+          <td>${a.nft_token_id ? `<span class="pill good">n° ${esc(a.nft_token_id)}</span>` : `<span class="pill">—</span>`}</td>
+          <td>${a.published ? "Oui" : `<span class="muted">Non</span>`}</td></tr>`).join("")}
+        </tbody></table></div>`;
+      view.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => (location.hash = "artwork/" + encodeURIComponent(tr.dataset.id))));
+    }
+
+    // ── Fiche d'une œuvre ──
+    async function artworkEditor(id) {
+      const [artists, exhibitions] = await Promise.all([store.listArtists(), store.listExhibitions()]);
+      const a = id ? await store.getArtwork(id) : { published: false, status: "enregistree", show_price: false, detail_images: [] };
+      if (id && !a) throw new Error("Œuvre introuvable : " + id);
+      if (!artists.length) { view.innerHTML = `<div class="panel">Ajoutez d'abord un artiste dans l'onglet <a href="#artists">Artistes</a>.</div>`; return; }
+      const locked = !!a.nft_token_id;
+      const exIds = (a.exhibitions ?? []).map((e) => e.id);
+      const opt = (v, cur, label) => `<option value="${esc(v)}" ${String(v) === String(cur ?? "") ? "selected" : ""}>${esc(label)}</option>`;
+
+      view.innerHTML = `
+        <p><a href="#artworks" class="small muted">← Toutes les œuvres</a></p>
+        <div class="editor">
+          <form class="panel stack" id="art-form">
+            <h2>${id ? `${esc(a.title)} <span class="mono muted" style="font-size:.9rem">${esc(a.id)}</span>` : "Nouvelle œuvre"}</h2>
+            ${locked ? `<p class="small" style="color:var(--warn)">Le NFT est créé : titre, artiste, année, technique et dimensions sont gravés et ne peuvent plus changer.</p>` : ""}
+            <div class="grid2">
+              <div><label>Titre</label><input name="title" required value="${esc(a.title)}" ${locked ? "readonly" : ""}></div>
+              <div><label>Artiste</label><select name="artist_id" required ${locked ? "disabled" : ""}>${artists.map((x) => opt(x.id, a.artist_id, x.name)).join("")}</select></div>
+              <div><label>Année</label><input name="year" type="number" min="1800" max="2100" value="${esc(a.year)}" ${locked ? "readonly" : ""}></div>
+              <div><label>Technique</label><input name="technique" placeholder="Acrylique sur toile" value="${esc(a.technique)}" ${locked ? "readonly" : ""}></div>
+              <div><label>Dimensions</label><input name="dimensions" placeholder="80 × 100 cm" value="${esc(a.dimensions)}" ${locked ? "readonly" : ""}></div>
+              <div><label>Statut</label><select name="status">${Object.entries(STATUS).map(([k, s]) => opt(k, a.status, s.label)).join("")}</select></div>
+              <div><label>Prix (€)</label><input name="price_eur" type="number" min="0" step="1" value="${esc(a.price_eur)}"></div>
+              <div><label>Certificat délivré le</label><input name="certificate_issued_at" type="date" value="${esc(String(a.certificate_issued_at ?? "").slice(0, 10))}" ${locked ? "readonly" : ""}></div>
+            </div>
+            <div><label>Histoire de l'œuvre</label><textarea name="description">${esc(a.description)}</textarea></div>
+            <div><label>Photo principale</label>
+              ${a.image_url ? `<img src="${esc(a.image_url)}" alt="" style="max-height:160px;margin-bottom:8px">` : ""}
+              <input type="file" name="image" accept="image/*"></div>
+            <div><label>Photos de détail (signature, dos, texture) — elles servent à comparer avec l'original</label>
+              <input type="file" name="details" accept="image/*" multiple>
+              ${a.detail_images?.length ? `<p class="small muted">${a.detail_images.length} photo(s) enregistrée(s). Un nouvel envoi les remplace.</p>` : ""}</div>
+            <div><label>Expositions</label>${exhibitions.length ? exhibitions.map((e) => `<label class="check"><input type="checkbox" name="ex" value="${esc(e.id)}" ${exIds.includes(e.id) ? "checked" : ""}> ${esc(e.title)} · ${esc(e.city)} · ${fmtDate(e.starts_on)}</label>`).join("") : `<span class="small muted">Aucune exposition.</span>`}</div>
+            <label class="check"><input type="checkbox" name="show_price" ${a.show_price ? "checked" : ""}> Afficher le prix sur la fiche publique</label>
+            <label class="check"><input type="checkbox" name="published" ${a.published ? "checked" : ""}> Publier la fiche</label>
+            <button class="btn">${id ? "Enregistrer" : "Créer l'œuvre"}</button>
+          </form>
+          <div id="side">${id ? "" : `<div class="panel small muted">La référence KEMETED (KEM-CUL-XXXX) est attribuée à la création. Vous pourrez ensuite lier la puce NFC, générer le QR code et créer le NFT.</div>`}</div>
+        </div>`;
+
+      document.getElementById("art-form").onsubmit = (e) => {
+        e.preventDefault();
+        busy(e.submitter, async () => {
+          const form = e.target;
+          const data = formData(form);
+          delete data.ex;
+          if (locked) for (const k of ["title", "artist_id", "year", "technique", "dimensions", "certificate_issued_at"]) data[k] = a[k];
+          if (form.image.files[0]) data.image_url = await store.uploadImage(form.image.files[0], id);
+          if (form.details.files.length) data.detail_images = await Promise.all([...form.details.files].map((f) => store.uploadImage(f, id)));
+          const saved = await store.saveArtwork(id ? { ...data, id } : data);
+          const newId = id ?? saved?.id ?? (await store.listArtworks({ all: true })).at(-1).id;
+          await store.setArtworkExhibitions(newId, [...form.querySelectorAll("input[name=ex]:checked")].map((x) => x.value));
+          toast("Œuvre enregistrée");
+          if (!id) location.hash = "artwork/" + encodeURIComponent(newId); else route();
+        });
+      };
+      if (id) await sidePanels(a);
+    }
+
+    async function sidePanels(a) {
+      const side = document.getElementById("side");
+      const [owners, tags] = await Promise.all([store.listOwnerships(a.id), store.listTags()]);
+      const tag = tags.find((t) => t.artwork_id === a.id);
+      const url = publicUrl(a.id);
+      const isHttps = url.startsWith("https://");
+      const nfcUrl = `${url}&p=${"0".repeat(32)}&m=${"0".repeat(16)}`;
+      const bare = nfcUrl.replace(/^https?:\/\//, "");
+      const offP = 7 + bare.indexOf("p=") + 2, offM = 7 + bare.indexOf("m=") + 2;
+      const hex = (n) => "0x" + n.toString(16).toUpperCase().padStart(2, "0");
+      const current = owners.find((o) => o.current);
+
+      side.innerHTML = `
+        <div class="panel stack">
+          <h3>Fiche publique</h3>
+          <a class="small" href="${esc(url)}" target="_blank">${esc(url)}</a>
+          <div class="qr-box"><img id="qr" alt="QR code de la fiche"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn small ghost" id="qr-png" download="${esc(a.id)}-qr.png">PNG</a><a class="btn small ghost" id="qr-svg" download="${esc(a.id)}-qr.svg">SVG (impression)</a></div>
+        </div>
+
+        <div class="panel stack">
+          <h3>Puce NFC</h3>
+          ${tag ? `<p class="small">Puce liée : <span class="mono">${esc(tag.uid)}</span>${tag.revoked ? ` <span class="pill warn">désactivée</span>` : ` <span class="pill good">active</span>`}</p>` : `<p class="small muted">Aucune puce liée.</p>`}
+          <form id="tag-form" class="stack"><div><label>UID de la puce (14 caractères hex)</label><input name="uid" placeholder="04DE5F1EACC040" required></div>
+            <button class="btn small">${tag ? "Remplacer la puce" : "Lier la puce"}</button></form>
+          ${tag && !tag.revoked ? `<button class="btn small ghost" id="revoke">Désactiver cette puce (perte, vol)</button>` : ""}
+          <details class="small"><summary><b>Réglages à programmer dans la puce</b> (NTAG 424 DNA, SUN)</summary>
+            <div class="stack" style="margin-top:10px">
+              ${isHttps ? "" : `<p style="color:var(--warn)">Le site doit être servi en https pour les vraies puces. Ces réglages sont calculés pour l'adresse actuelle.</p>`}
+              <div>URL NDEF (préfixe ${isHttps ? "0x04 https://" : "0x03 http://"}) :<code class="block">${esc(nfcUrl)}</code></div>
+              <table class="list"><tbody>
+                <tr><td>SDM activé, miroir UID + compteur</td><td>Oui</td></tr>
+                <tr><td>SDMMetaRead (chiffrement PICCData)</td><td>Clé 1 = SUN_META_KEY</td></tr>
+                <tr><td>SDMFileRead (MAC)</td><td>Clé 2 = SUN_FILE_KEY</td></tr>
+                <tr><td>PICCDataOffset</td><td class="mono">${offP} (${hex(offP)})</td></tr>
+                <tr><td>SDMMACInputOffset</td><td class="mono">${offM} (${hex(offM)})</td></tr>
+                <tr><td>SDMMACOffset</td><td class="mono">${offM} (${hex(offM)})</td></tr>
+                <tr><td>Clé maître (clé 0)</td><td>changée, conservée hors ligne</td></tr>
+              </tbody></table>
+              <p class="muted">Ensuite, scannez la puce : l'UID s'affiche dans l'outil d'encodage (ou dans le journal des scans, résultat « puce inconnue »).</p>
+            </div></details>
+        </div>
+
+        <div class="panel stack">
+          <h3>Propriété</h3>
+          ${current ? `<p class="small">Actuel : <b>${esc(current.owner_name)}</b> depuis le ${fmtDate(current.acquired_on)}${current.show_name ? "" : " · nom masqué au public"}</p>` : `<p class="small muted">Aucun propriétaire enregistré (œuvre détenue par l'artiste ou KEMETED).</p>`}
+          ${owners.length > 1 ? `<ul class="timeline small">${owners.filter((o) => !o.current).map((o) => `<li>${fmtDate(o.acquired_on)} · ${esc(o.owner_name)}</li>`).join("")}</ul>` : ""}
+          <details><summary class="small"><b>Enregistrer une vente / un changement de propriétaire</b></summary>
+            <form id="owner-form" class="stack" style="margin-top:10px">
+              <div><label>Nom du propriétaire</label><input name="owner_name" required></div>
+              <div><label>E-mail</label><input name="owner_email" type="email"></div>
+              <div class="grid2"><div><label>Date d'acquisition</label><input name="acquired_on" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+                <div><label>Prix (€)</label><input name="price_eur" type="number" min="0"></div></div>
+              <div><label>Portefeuille du propriétaire (facultatif, 0x…)</label><input name="owner_wallet" placeholder="Laisser vide : KEMETED garde le NFT"></div>
+              <label class="check"><input type="checkbox" name="show_name"> Afficher son nom publiquement (consentement écrit obtenu)</label>
+              <div><label>Note interne</label><input name="note"></div>
+              <button class="btn small">Enregistrer le transfert</button>
+            </form></details>
+        </div>
+
+        <div class="panel stack">
+          <h3>Jumeau numérique (NFT)</h3>
+          ${a.nft_token_id
+            ? `<p class="small">Jeton n° <b>${esc(a.nft_token_id)}</b> · ${esc(a.nft_chain)} · ${fmtDate(a.nft_minted_at)}</p>
+               <p class="small muted">Empreinte : <span class="mono">${esc(a.certificate_hash)}</span></p>
+               ${a.nft_tx && config.EXPLORER_URL ? `<a class="small" target="_blank" href="${config.EXPLORER_URL}/tx/${esc(a.nft_tx)}">Transaction</a>` : ""}
+               ${current?.owner_wallet ? `<button class="btn small" id="nft-transfer">Envoyer le NFT au portefeuille du propriétaire</button>` : ""}`
+            : `<p class="small muted">La création grave l'identifiant ${esc(a.id)} et l'empreinte du certificat sur la blockchain. Titre, artiste, année, technique et dimensions ne pourront plus être modifiés. Vérifiez la fiche avant.</p>
+               <button class="btn small" id="mint">Créer le NFT</button>`}
+        </div>`;
+
+      // QR code
+      const QR = (await import("https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm")).default;
+      const png = await QR.toDataURL(url, { margin: 2, width: 1024, errorCorrectionLevel: "M" });
+      document.getElementById("qr").src = png;
+      document.getElementById("qr-png").href = png;
+      const svg = await QR.toString(url, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
+      document.getElementById("qr-svg").href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+
+      document.getElementById("tag-form").onsubmit = (e) => {
+        e.preventDefault();
+        busy(e.submitter, async () => { await store.linkTag(e.target.uid.value, a.id); toast("Puce liée"); route(); });
+      };
+      document.getElementById("revoke")?.addEventListener("click", (e) => {
+        if (!confirm("Désactiver cette puce ? Tout scan affichera « Puce désactivée ».")) return;
+        busy(e.target, async () => { await store.revokeTag(tag.uid); toast("Puce désactivée"); route(); });
+      });
+      document.getElementById("owner-form").onsubmit = (e) => {
+        e.preventDefault();
+        busy(e.submitter, async () => { await store.transferOwnership(a.id, formData(e.target)); toast("Transfert enregistré"); route(); });
+      };
+      document.getElementById("mint")?.addEventListener("click", (e) => {
+        if (!confirm(`Créer le NFT de ${a.id} « ${a.title} » ? L'identité de l'œuvre sera gravée définitivement.`)) return;
+        busy(e.target, async () => { const r = await store.mintNft(a.id); toast(`NFT créé : jeton n° ${r.token_id}`); route(); });
+      });
+      document.getElementById("nft-transfer")?.addEventListener("click", (e) => {
+        if (!confirm(`Envoyer le NFT au portefeuille ${current.owner_wallet} ? KEMETED n'en aura plus la garde.`)) return;
+        busy(e.target, async () => { await store.transferNft(a.id, current.owner_wallet); toast("NFT transféré"); route(); });
+      });
+    }
+
+    // ── Artistes ──
+    async function artistsView() {
+      const artists = await store.listArtists();
+      view.innerHTML = `<div class="editor"><div class="table-scroll"><table class="list"><thead><tr><th>Artiste</th><th>Pays</th></tr></thead><tbody>
+        ${artists.map((x) => `<tr class="clickable" data-id="${esc(x.id)}"><td><b>${esc(x.name)}</b></td><td>${esc(x.country)}</td></tr>`).join("")}</tbody></table></div>
+        <form class="panel stack" id="artist-form"></form></div>`;
+      const form = document.getElementById("artist-form");
+      const fill = (x = {}) => {
+        form.innerHTML = `<h3>${x.id ? "Modifier l'artiste" : "Nouvel artiste"}</h3>
+          <div><label>Nom</label><input name="name" required value="${esc(x.name)}"></div>
+          <div><label>Pays</label><input name="country" value="${esc(x.country)}"></div>
+          <div><label>Biographie</label><textarea name="bio">${esc(x.bio)}</textarea></div>
+          <div><label>Site web</label><input name="website" type="url" value="${esc(x.website)}"></div>
+          <div><label>Instagram</label><input name="instagram" placeholder="@compte" value="${esc(x.instagram)}"></div>
+          <button class="btn small">${x.id ? "Enregistrer" : "Ajouter"}</button>
+          ${x.id ? `<button type="button" class="btn small ghost" id="new-artist">Nouvel artiste</button>` : ""}`;
+        form.onsubmit = (e) => { e.preventDefault(); busy(e.submitter, async () => { await store.saveArtist({ ...formData(form), id: x.id }); toast("Artiste enregistré"); route(); }); };
+        document.getElementById("new-artist")?.addEventListener("click", () => fill());
+      };
+      fill();
+      view.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => fill(artists.find((x) => x.id === tr.dataset.id))));
+    }
+
+    // ── Expositions ──
+    async function exhibitionsView() {
+      const list = await store.listExhibitions();
+      view.innerHTML = `<div class="editor"><div class="table-scroll"><table class="list"><thead><tr><th>Exposition</th><th>Lieu</th><th>Dates</th></tr></thead><tbody>
+        ${list.map((x) => `<tr class="clickable" data-id="${esc(x.id)}"><td><b>${esc(x.title)}</b></td><td>${esc([x.venue, x.city].filter(Boolean).join(", "))}</td><td class="small">${fmtDate(x.starts_on)} → ${fmtDate(x.ends_on)}</td></tr>`).join("")}</tbody></table></div>
+        <form class="panel stack" id="ex-form"></form></div>`;
+      const form = document.getElementById("ex-form");
+      const fill = (x = {}) => {
+        form.innerHTML = `<h3>${x.id ? "Modifier l'exposition" : "Nouvelle exposition"}</h3>
+          <div><label>Titre</label><input name="title" required value="${esc(x.title)}"></div>
+          <div><label>Lieu</label><input name="venue" value="${esc(x.venue)}"></div>
+          <div><label>Ville</label><input name="city" value="${esc(x.city)}"></div>
+          <div class="grid2"><div><label>Début</label><input name="starts_on" type="date" value="${esc(x.starts_on)}"></div><div><label>Fin</label><input name="ends_on" type="date" value="${esc(x.ends_on)}"></div></div>
+          <button class="btn small">${x.id ? "Enregistrer" : "Ajouter"}</button>`;
+        form.onsubmit = (e) => { e.preventDefault(); busy(e.submitter, async () => { await store.saveExhibition({ ...formData(form), id: x.id }); toast("Exposition enregistrée"); route(); }); };
+      };
+      fill();
+      view.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => fill(list.find((x) => x.id === tr.dataset.id))));
+    }
+
+    // ── Journal des scans ──
+    async function scansView() {
+      const scans = await store.listScans(200);
+      const LABEL = { authentique: ["Authentique", "good"], qr: ["QR / lien", ""], rejoue: ["Lien rejoué", "warn"], invalide: ["Signature invalide", "warn"],
+        puce_inconnue: ["Puce inconnue", "warn"], autre_oeuvre: ["Puce d'une autre œuvre", "warn"], revoquee: ["Puce désactivée", "warn"] };
+      view.innerHTML = scans.length ? `<p class="small muted">Les alertes (lien rejoué, puce d'une autre œuvre, signature invalide) peuvent signaler une copie.</p>
+        <div class="table-scroll"><table class="list"><thead><tr><th>Date</th><th>Œuvre</th><th>Résultat</th><th>Puce</th><th>Compteur</th></tr></thead><tbody>
+        ${scans.map((s) => `<tr><td class="small">${new Date(s.created_at).toLocaleString("fr-FR")}</td><td class="mono">${esc(s.artwork_id)}</td>
+          <td><span class="pill ${LABEL[s.result]?.[1] ?? ""}">${LABEL[s.result]?.[0] ?? esc(s.result)}</span></td><td class="mono">${esc(s.tag_uid ?? "")}</td><td>${s.counter ?? ""}</td></tr>`).join("")}
+        </tbody></table></div>` : `<p class="muted">Aucun scan pour le moment.</p>`;
+    }
+
+    route();
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KEMETED Art Registry</title>
+  <meta name="description" content="Le registre numérique des œuvres accompagnées par KEMETED : chaque œuvre a son passeport, son certificat et son jumeau numérique.">
+  <link rel="icon" href="assets/logo.png">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="eyebrow">KEMETED CULTURE · Registre des œuvres</div>
+      <h1>Chaque œuvre a une identité, une histoire, une trace.</h1>
+      <p>Approchez votre téléphone de la puce placée sur une œuvre KEMETED, ou scannez son QR code, pour consulter son passeport officiel et vérifier son authenticité.</p>
+    </section>
+    <div class="cards" id="cards"><p class="muted">Chargement…</p></div>
+  </main>
+  <script type="module">
+    import { chrome, esc, STATUS } from "./assets/ui.js";
+    import { listArtworks } from "./assets/store.js";
+    chrome("");
+    const works = await listArtworks();
+    document.getElementById("cards").innerHTML = works.length ? works.map((a) => `
+      <a class="card-art" href="a/?id=${encodeURIComponent(a.id)}">
+        <div class="img">${a.image_url ? `<img src="${esc(a.image_url)}" alt="${esc(a.title)}" loading="lazy">` : ""}</div>
+        <h3>${esc(a.title)}</h3>
+        <div class="muted small">${esc(a.artists?.name)}${a.year ? " · " + a.year : ""}</div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <span class="pill ${STATUS[a.status]?.tone ?? ""}">${STATUS[a.status]?.label ?? ""}</span>
+          <span class="pill mono" style="font-size:.68rem">${esc(a.id)}</span>
+        </div>
+      </a>`).join("") : `<p class="muted">Aucune œuvre publiée pour le moment.</p>`;
+  </script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Passeport de l'œuvre · KEMETED</title>
+  <link rel="icon" href="../assets/logo.png">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <main class="wrap" id="main"><p class="muted" style="padding:60px 0">Chargement du passeport…</p></main>
+  <script type="module">
+    import { chrome, esc, fmtDate, fmtPrice, STATUS } from "../assets/ui.js";
+    import { getArtwork, verifyScan, artworksByArtist, DEMO } from "../assets/store.js";
+    import { config } from "../assets/config.js";
+    import { canonicalCertificate, certificateHash } from "../supabase/functions/_shared/certificate.js";
+    chrome("../");
+
+    const ICON = {
+      good: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
+      info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 11v6M12 7.2v.1"/></svg>`,
+      warn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 7v6M12 16.8v.1"/></svg>`,
+      bad: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>`,
+    };
+    const verdict = (tone, title, text) =>
+      `<div class="verdict ${tone}" role="status"><div class="seal">${ICON[tone] ?? ""}</div><div><strong>${title}</strong><p>${text}</p></div></div>`;
+
+    const params = new URLSearchParams(location.search);
+    const id = (params.get("id") || "").toUpperCase();
+    const p = params.get("p"), m = params.get("m");
+    const main = document.getElementById("main");
+
+    const a = id ? await getArtwork(id) : null;
+    if (!a) {
+      document.title = "Œuvre inconnue · KEMETED";
+      main.innerHTML = `<div style="max-width:620px;padding:60px 0">${verdict("bad", "Cet identifiant n'existe pas dans le registre KEMETED",
+        `Aucune œuvre n'est enregistrée sous la référence <span class="mono">${esc(id || "(vide)")}</span>. Si cette référence figure sur une œuvre, elle n'a pas été délivrée par KEMETED. Écrivez-nous à ${esc(config.CONTACT_EMAIL)}.`)}</div>`;
+      throw new Error("introuvable");
+    }
+    document.title = `${a.title} · ${a.artists?.name ?? ""} · KEMETED`;
+
+    const statusPill = STATUS[a.status];
+    const others = (await artworksByArtist(a.artist_id)).filter((x) => x.id !== a.id);
+    const provenance = [
+      a.year && { sort: `${a.year}-00`, date: String(a.year), text: `Création par ${esc(a.artists?.name)}` },
+      a.certificate_issued_at && { sort: String(a.certificate_issued_at).slice(0, 10), date: fmtDate(a.certificate_issued_at), text: "Enregistrement au registre KEMETED et délivrance du certificat" },
+      ...(a.exhibitions ?? []).map((e) => ({ sort: e.starts_on, date: fmtDate(e.starts_on), text: `Exposée : <em>${esc(e.title)}</em>, ${esc([e.venue, e.city].filter(Boolean).join(", "))}` })),
+      ...(a.provenance ?? []).map((o) => ({ sort: o.acquired_on, date: fmtDate(o.acquired_on), text: `Acquisition · ${esc(o.owner_display)}${o.current ? " (propriétaire actuel)" : ""}` })),
+    ].filter(Boolean).sort((x, y) => String(x.sort ?? "").localeCompare(String(y.sort ?? "")));
+
+    main.innerHTML = `
+      <div class="passport">
+        <div class="artwork-img p-img">${a.image_url ? `<img src="${esc(a.image_url)}" alt="${esc(a.title)}, ${esc(a.artists?.name)}">` : ""}</div>
+        <div class="p-head">
+          <div class="title-block">
+            <div class="eyebrow">Passeport de l'œuvre · <span class="mono">${esc(a.id)}</span></div>
+            <h1 style="margin-top:10px">${esc(a.title)}</h1>
+            <div class="artist">${esc(a.artists?.name)}${a.year ? ", " + a.year : ""}</div>
+            <dl class="facts">
+              ${a.technique ? `<dt>Technique</dt><dd>${esc(a.technique)}</dd>` : ""}
+              ${a.dimensions ? `<dt>Dimensions</dt><dd>${esc(a.dimensions)}</dd>` : ""}
+              <dt>Statut</dt><dd><span class="pill ${statusPill?.tone ?? ""}">${statusPill?.label ?? ""}</span></dd>
+            </dl>
+          </div>
+        </div>
+        <div id="verdict" class="p-verdict">${verdict("loading", "Vérification en cours…", "Interrogation du registre KEMETED.")}</div>
+        <div class="p-body">
+
+          ${a.description ? `<section class="section"><h2>L'œuvre</h2>${a.description.split(/\n+/).map((t) => `<p>${esc(t)}</p>`).join("")}</section>` : ""}
+
+          ${a.detail_images?.length ? `<section class="section"><h2>Détails d'identification</h2><p class="muted small">Comparez ces détails avec l'œuvre que vous avez devant vous.</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${a.detail_images.map((u) => `<img src="${esc(u)}" alt="Détail" style="aspect-ratio:1;object-fit:cover;border-radius:4px">`).join("")}</div></section>` : ""}
+
+          <section class="section"><h2>L'artiste</h2>
+            <h3>${esc(a.artists?.name)}</h3>
+            ${a.artists?.country ? `<div class="muted small" style="margin:2px 0 10px">${esc(a.artists.country)}</div>` : ""}
+            ${a.artists?.bio ? `<p>${esc(a.artists.bio)}</p>` : ""}
+            <p class="small">${[a.artists?.website && `<a href="${esc(a.artists.website)}" rel="noopener" target="_blank">Site</a>`,
+              a.artists?.instagram && `<a href="https://instagram.com/${esc(a.artists.instagram.replace(/^@/, ""))}" rel="noopener" target="_blank">Instagram</a>`].filter(Boolean).join(" · ")}</p>
+            ${others.length ? `<div class="eyebrow" style="margin-top:16px">Autres œuvres au registre</div>
+              <p>${others.map((o) => `<a href="?id=${encodeURIComponent(o.id)}">${esc(o.title)}</a>`).join(" · ")}</p>` : ""}
+          </section>
+
+          <section class="section"><h2>Histoire et provenance</h2>
+            <ul class="timeline">${provenance.map((e) => `<li><div class="small muted">${e.date}</div><div>${e.text}</div></li>`).join("")}</ul>
+          </section>
+
+          <section class="section" id="certificat"><h2>Certificat d'authenticité</h2>
+            <div class="cert">
+              <div class="row"><span>Identifiant KEMETED</span><span class="mono">${esc(a.id)}</span></div>
+              <div class="row"><span>Artiste</span><span>${esc(a.artists?.name)}</span></div>
+              <div class="row"><span>Titre</span><span>${esc(a.title)}</span></div>
+              ${a.year ? `<div class="row"><span>Année</span><span>${a.year}</span></div>` : ""}
+              ${a.technique ? `<div class="row"><span>Technique</span><span>${esc(a.technique)}</span></div>` : ""}
+              ${a.dimensions ? `<div class="row"><span>Dimensions</span><span>${esc(a.dimensions)}</span></div>` : ""}
+              ${a.certificate_issued_at ? `<div class="row"><span>Délivré le</span><span>${fmtDate(a.certificate_issued_at)}</span></div>` : ""}
+              <div class="row"><span>Validation</span><span>KEMETED &amp; Association</span></div>
+              ${a.nft_token_id ? `
+                <div class="row"><span>Jumeau numérique (NFT)</span><span>Jeton n° ${esc(a.nft_token_id)} · ${esc(a.nft_chain === "base" ? "Base" : a.nft_chain === "base-sepolia" ? "Base Sepolia (test)" : a.nft_chain)}</span></div>
+                <div class="row"><span>Empreinte du certificat</span><span class="mono">${esc(a.certificate_hash)}</span></div>` : ""}
+            </div>
+            <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+              ${a.nft_token_id ? `<button class="btn" id="chain-btn">Vérifier sur la blockchain</button>` : ""}
+              ${a.nft_tx && config.EXPLORER_URL ? `<a class="btn ghost" href="${config.EXPLORER_URL}/tx/${esc(a.nft_tx)}" target="_blank" rel="noopener">Voir la transaction</a>` : ""}
+              <button class="btn ghost" onclick="print()">Imprimer le certificat</button>
+            </div>
+            <div class="chain-result" id="chain-result"></div>
+            ${a.nft_token_id ? "" : `<p class="muted small" style="margin-top:12px">Le jumeau numérique de cette œuvre n'a pas encore été inscrit sur la blockchain.</p>`}
+          </section>
+
+          ${a.status === "a_vendre" ? `<section class="section no-print"><h2>Disponibilité</h2>
+            ${a.show_price && a.price_eur ? `<div class="price">${fmtPrice(a.price_eur)}</div>` : ""}
+            <p>Cette œuvre est disponible à l'acquisition. Le certificat, le jumeau numérique et l'historique sont transmis au nouveau propriétaire.</p>
+            <a class="btn" href="mailto:${esc(config.CONTACT_EMAIL)}?subject=${encodeURIComponent(`Acquisition ${a.id} — ${a.title}`)}">Contacter KEMETED</a>
+          </section>` : ""}
+        </div>
+      </div>`;
+
+    // ── Vérification d'authenticité ──
+    const KEY = "kemeted-scan-" + a.id;
+    const box = document.getElementById("verdict");
+    let r;
+    if (p && m) {
+      r = await verifyScan(a.id, p, m).catch(() => ({ status: "erreur" }));
+      try { sessionStorage.setItem(KEY, JSON.stringify({ ...r, at: Date.now() })); } catch {}
+      // On retire le code à usage unique de l'adresse : un rechargement ou un partage ne le rejoue pas
+      history.replaceState(null, "", `?id=${encodeURIComponent(a.id)}`);
+    } else {
+      let recent = null;
+      try { recent = JSON.parse(sessionStorage.getItem(KEY)); } catch {}
+      r = recent && Date.now() - recent.at < 30 * 60e3 ? { ...recent, cached: true } : await verifyScan(a.id).catch(() => ({ status: "erreur" }));
+    }
+    const ago = r.cached ? ` (vérifiée il y a ${Math.max(1, Math.round((Date.now() - r.at) / 60e3))} min)` : "";
+    box.innerHTML = {
+      authentique: verdict("good", "Œuvre authentifiée par KEMETED" + ago,
+        `La puce sécurisée fixée sur cette œuvre a été vérifiée par le registre. Cette œuvre est enregistrée sous la référence ${esc(a.id)}.`),
+      qr: verdict("info", "Fiche officielle du registre KEMETED",
+        "Vous consultez cette fiche par un QR code ou un lien. Pour vérifier que l'œuvre devant vous est l'originale, approchez votre téléphone de sa puce NFC."),
+      rejoue: verdict("warn", "Ce lien de vérification a déjà servi",
+        "Chaque scan de la puce produit un code unique, valable une seule fois. Un lien copié ou partagé ne prouve rien. Si vous êtes devant l'œuvre, scannez à nouveau sa puce."),
+      invalide: verdict("bad", "Puce non reconnue",
+        `La signature de cette puce n'a pas été émise par KEMETED. Ne vous fiez pas à cette étiquette et écrivez-nous à ${esc(config.CONTACT_EMAIL)}.`),
+      puce_inconnue: verdict("bad", "Puce non enregistrée",
+        `Cette puce n'est associée à aucune œuvre du registre. Écrivez-nous à ${esc(config.CONTACT_EMAIL)}.`),
+      autre_oeuvre: verdict("bad", "Attention : cette puce appartient à une autre œuvre",
+        `La puce scannée est enregistrée pour l'œuvre <a href="?id=${encodeURIComponent(r.registered_artwork_id ?? "")}" class="mono">${esc(r.registered_artwork_id)}</a>, pas pour celle-ci. Il peut s'agir d'une copie.`),
+      revoquee: verdict("warn", "Puce désactivée",
+        "Cette puce a été désactivée par KEMETED (perte, remplacement ou signalement). La fiche reste consultable, mais l'authenticité doit être confirmée par KEMETED."),
+    }[r.status] ?? verdict("warn", "Vérification indisponible", "Le registre n'a pas pu être joint. Réessayez dans un instant.");
+
+    // ── Vérification on-chain : on recalcule l'empreinte ici, dans le navigateur ──
+    document.getElementById("chain-btn")?.addEventListener("click", async (ev) => {
+      const out = document.getElementById("chain-result");
+      ev.target.disabled = true;
+      out.innerHTML = `<span class="muted">Calcul de l'empreinte et lecture de la blockchain…</span>`;
+      try {
+        const hash = await certificateHash({ ...a, artist_name: a.artists.name });
+        let ok;
+        if (DEMO || !config.NFT_CONTRACT) {
+          ok = hash === a.certificate_hash;
+          out.innerHTML = (ok ? "✓ L'empreinte recalculée correspond à celle enregistrée." : "✗ L'empreinte ne correspond pas.") +
+            ` <span class="muted">(démo : pas de lecture blockchain réelle)</span>`;
+        } else {
+          const { createPublicClient, http, parseAbi } = await import("https://cdn.jsdelivr.net/npm/viem@2/+esm");
+          const client = createPublicClient({ transport: http(config.RPC_URL) });
+          ok = await client.readContract({
+            address: config.NFT_CONTRACT, functionName: "verifyCertificate", args: [a.id, hash],
+            abi: parseAbi(["function verifyCertificate(string artworkId, bytes32 certificateHash) view returns (bool)"]),
+          });
+          out.innerHTML = ok
+            ? `✓ Le certificat affiché correspond exactement à celui gravé sur la blockchain lors de l'enregistrement. <a href="${config.EXPLORER_URL}/token/${config.NFT_CONTRACT}?a=${esc(a.nft_token_id)}" target="_blank" rel="noopener">Voir le jeton</a>`
+            : "✗ Le certificat affiché ne correspond pas à celui gravé sur la blockchain. Contactez KEMETED.";
+        }
+        out.style.color = ok ? "var(--good)" : "var(--bad)";
+        out.insertAdjacentHTML("beforeend", `<details class="small muted" style="margin-top:8px"><summary>Données hachées</summary><code class="block">${esc(canonicalCertificate({ ...a, artist_name: a.artists.name }))}</code><div class="mono" style="margin-top:6px">SHA-256 = ${hash}</div></details>`);
+      } catch (e) {
+        out.textContent = "Lecture impossible : " + e.message;
+      } finally { ev.target.disabled = false; }
+    });
+  </script>
+</body>
+</html>

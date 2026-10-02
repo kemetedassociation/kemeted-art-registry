@@ -1,0 +1,10 @@
+# Les fonctions publiques n'exigent pas de jeton utilisateur.
+# `nft` vérifie lui-même que l'appelant est administrateur.
+[functions.verify-scan]
+verify_jwt = false
+
+[functions.nft-metadata]
+verify_jwt = false
+
+[functions.nft]
+verify_jwt = true
