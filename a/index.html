@@ -50,8 +50,8 @@
     ].filter(Boolean).sort((x, y) => String(x.sort ?? "").localeCompare(String(y.sort ?? "")));
 
     main.innerHTML = `
-      <div class="passport">
-        <div class="artwork-img p-img">${a.image_url ? `<img src="${esc(a.image_url)}" alt="${esc(a.title)}, ${esc(a.artists?.name)}">` : ""}</div>
+      <div class="passport${a.image_url ? "" : " no-img"}">
+        ${a.image_url ? `<div class="artwork-img p-img"><img src="${esc(a.image_url)}" alt="${esc(a.title)}, ${esc(a.artists?.name)}"></div>` : ""}
         <div class="p-head">
           <div class="title-block">
             <div class="eyebrow">Passeport de l'œuvre · <span class="mono">${esc(a.id)}</span></div>
@@ -70,7 +70,8 @@
           ${a.description ? `<section class="section"><h2>L'œuvre</h2>${a.description.split(/\n+/).map((t) => `<p>${esc(t)}</p>`).join("")}</section>` : ""}
 
           ${a.detail_images?.length ? `<section class="section"><h2>Détails d'identification</h2><p class="muted small">Comparez ces détails avec l'œuvre que vous avez devant vous.</p>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${a.detail_images.map((u) => `<img src="${esc(u)}" alt="Détail" style="aspect-ratio:1;object-fit:cover;border-radius:4px">`).join("")}</div></section>` : ""}
+            <div class="details-grid${a.detail_images.length === 1 ? " single" : ""}">${a.detail_images.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Détail d'identification de l'œuvre" loading="lazy"></a>`).join("")}</div>
+            <p class="muted small" style="margin-top:8px">Touchez une photo pour l'agrandir.</p></section>` : ""}
 
           <section class="section"><h2>L'artiste</h2>
             <h3>${esc(a.artists?.name)}</h3>
