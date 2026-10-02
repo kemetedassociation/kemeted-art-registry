@@ -123,13 +123,14 @@
     let r;
     if (p && m) {
       r = await verifyScan(a.id, p, m).catch(() => ({ status: "erreur" }));
-      try { sessionStorage.setItem(KEY, JSON.stringify({ ...r, at: Date.now() })); } catch {}
+      // Seul un scan authentique est mémorisé (30 min) : une alerte ne doit pas coller à la fiche
+      try { if (r.status === "authentique") sessionStorage.setItem(KEY, JSON.stringify({ ...r, at: Date.now() })); else sessionStorage.removeItem(KEY); } catch {}
       // On retire le code à usage unique de l'adresse : un rechargement ou un partage ne le rejoue pas
       history.replaceState(null, "", `?id=${encodeURIComponent(a.id)}`);
     } else {
       let recent = null;
       try { recent = JSON.parse(sessionStorage.getItem(KEY)); } catch {}
-      r = recent && Date.now() - recent.at < 30 * 60e3 ? { ...recent, cached: true } : await verifyScan(a.id).catch(() => ({ status: "erreur" }));
+      r = recent?.status === "authentique" && Date.now() - recent.at < 30 * 60e3 ? { ...recent, cached: true } : await verifyScan(a.id).catch(() => ({ status: "erreur" }));
     }
     const ago = r.cached ? ` (vérifiée il y a ${Math.max(1, Math.round((Date.now() - r.at) / 60e3))} min)` : "";
     box.innerHTML = {

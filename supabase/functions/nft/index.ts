@@ -28,13 +28,16 @@ const abi = parseAbi([
 const chainName = Deno.env.get("NFT_CHAIN") ?? "base-sepolia";
 const chain = chainName === "base" ? base : baseSepolia;
 const transport = http(Deno.env.get("RPC_URL") || undefined);
-const account = privateKeyToAccount(Deno.env.get("MINTER_PRIVATE_KEY") as `0x${string}`);
+const minterKey = Deno.env.get("MINTER_PRIVATE_KEY");
 const contract = Deno.env.get("NFT_CONTRACT") as `0x${string}`;
+const configured = !!minterKey && !!contract;
+const account = configured ? privateKeyToAccount(minterKey as `0x${string}`) : null!;
 const pub = createPublicClient({ chain, transport });
-const wallet = createWalletClient({ chain, transport, account });
+const wallet = configured ? createWalletClient({ chain, transport, account }) : null!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!configured) return json({ error: "Blockchain pas encore configurée (contrat non déployé)" }, 503);
 
   // Vérifie que l'appelant est admin, avec SON jeton (les RLS s'appliquent)
   const asUser = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
