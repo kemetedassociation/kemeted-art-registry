@@ -117,6 +117,35 @@
         </div>
       </div>`;
 
+    // ── Vérification on-chain : on recalcule l'empreinte ici, dans le navigateur ──
+    document.getElementById("chain-btn")?.addEventListener("click", async (ev) => {
+      const out = document.getElementById("chain-result");
+      ev.target.disabled = true;
+      out.innerHTML = `<span class="muted">Calcul de l'empreinte et lecture de la blockchain…</span>`;
+      try {
+        const hash = await certificateHash({ ...a, artist_name: a.artists.name });
+        let ok;
+        if (DEMO || !config.NFT_CONTRACT) {
+          ok = hash === a.certificate_hash;
+          out.innerHTML = (ok ? "✓ L'empreinte recalculée correspond à celle enregistrée." : "✗ L'empreinte ne correspond pas.") +
+            ` <span class="muted">(démo : pas de lecture blockchain réelle)</span>`;
+        } else {
+          const { createPublicClient, http, parseAbi } = await import("https://cdn.jsdelivr.net/npm/viem@2/+esm");
+          const client = createPublicClient({ transport: http(config.RPC_URL) });
+          ok = await client.readContract({
+            address: config.NFT_CONTRACT, functionName: "verifyCertificate", args: [a.id, hash],
+            abi: parseAbi(["function verifyCertificate(string artworkId, bytes32 certificateHash) view returns (bool)"]),
+          });
+          out.innerHTML = ok
+            ? `✓ Le certificat affiché correspond exactement à celui gravé sur la blockchain lors de l'enregistrement. <a href="${config.EXPLORER_URL}/token/${config.NFT_CONTRACT}?a=${esc(a.nft_token_id)}" target="_blank" rel="noopener">Voir le jeton</a>`
+            : "✗ Le certificat affiché ne correspond pas à celui gravé sur la blockchain. Contactez KEMETED.";
+        }
+        out.style.color = ok ? "var(--good)" : "var(--bad)";
+        out.insertAdjacentHTML("beforeend", `<details class="small muted" style="margin-top:8px"><summary>Données hachées</summary><code class="block">${esc(canonicalCertificate({ ...a, artist_name: a.artists.name }))}</code><div class="mono" style="margin-top:6px">SHA-256 = ${hash}</div></details>`);
+      } catch (e) {
+        out.textContent = "Lecture impossible : " + e.message;
+      } finally { ev.target.disabled = false; }
+    });
     // ── Vérification d'authenticité ──
     const KEY = "kemeted-scan-" + a.id;
     const box = document.getElementById("verdict");
@@ -150,35 +179,6 @@
         "Cette puce a été désactivée par KEMETED (perte, remplacement ou signalement). La fiche reste consultable, mais l'authenticité doit être confirmée par KEMETED."),
     }[r.status] ?? verdict("warn", "Vérification indisponible", "Le registre n'a pas pu être joint. Réessayez dans un instant.");
 
-    // ── Vérification on-chain : on recalcule l'empreinte ici, dans le navigateur ──
-    document.getElementById("chain-btn")?.addEventListener("click", async (ev) => {
-      const out = document.getElementById("chain-result");
-      ev.target.disabled = true;
-      out.innerHTML = `<span class="muted">Calcul de l'empreinte et lecture de la blockchain…</span>`;
-      try {
-        const hash = await certificateHash({ ...a, artist_name: a.artists.name });
-        let ok;
-        if (DEMO || !config.NFT_CONTRACT) {
-          ok = hash === a.certificate_hash;
-          out.innerHTML = (ok ? "✓ L'empreinte recalculée correspond à celle enregistrée." : "✗ L'empreinte ne correspond pas.") +
-            ` <span class="muted">(démo : pas de lecture blockchain réelle)</span>`;
-        } else {
-          const { createPublicClient, http, parseAbi } = await import("https://cdn.jsdelivr.net/npm/viem@2/+esm");
-          const client = createPublicClient({ transport: http(config.RPC_URL) });
-          ok = await client.readContract({
-            address: config.NFT_CONTRACT, functionName: "verifyCertificate", args: [a.id, hash],
-            abi: parseAbi(["function verifyCertificate(string artworkId, bytes32 certificateHash) view returns (bool)"]),
-          });
-          out.innerHTML = ok
-            ? `✓ Le certificat affiché correspond exactement à celui gravé sur la blockchain lors de l'enregistrement. <a href="${config.EXPLORER_URL}/token/${config.NFT_CONTRACT}?a=${esc(a.nft_token_id)}" target="_blank" rel="noopener">Voir le jeton</a>`
-            : "✗ Le certificat affiché ne correspond pas à celui gravé sur la blockchain. Contactez KEMETED.";
-        }
-        out.style.color = ok ? "var(--good)" : "var(--bad)";
-        out.insertAdjacentHTML("beforeend", `<details class="small muted" style="margin-top:8px"><summary>Données hachées</summary><code class="block">${esc(canonicalCertificate({ ...a, artist_name: a.artists.name }))}</code><div class="mono" style="margin-top:6px">SHA-256 = ${hash}</div></details>`);
-      } catch (e) {
-        out.textContent = "Lecture impossible : " + e.message;
-      } finally { ev.target.disabled = false; }
-    });
   </script>
 </body>
 </html>
