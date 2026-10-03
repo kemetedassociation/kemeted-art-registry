@@ -78,8 +78,14 @@
             <h3>${esc(a.artists?.name)}</h3>
             ${a.artists?.country ? `<div class="muted small" style="margin:2px 0 10px">${esc(a.artists.country)}</div>` : ""}
             ${a.artists?.bio ? `<p>${esc(a.artists.bio)}</p>` : ""}
-            <p class="small">${[a.artists?.website && `<a href="${esc(a.artists.website)}" rel="noopener" target="_blank">Site</a>`,
-              a.artists?.instagram && `<a href="https://instagram.com/${esc(a.artists.instagram.replace(/^@/, ""))}" rel="noopener" target="_blank">Instagram</a>`].filter(Boolean).join(" · ")}</p>
+            ${a.artists?.website || a.artists?.instagram ? `<div class="artist-links">${[
+              a.artists?.website && `<a class="btn small" href="${esc(a.artists.website)}" rel="noopener" target="_blank">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>
+                Site de l'artiste</a>`,
+              a.artists?.instagram && `<a class="btn small ghost" href="https://www.instagram.com/${esc(a.artists.instagram.replace(/^@/, ""))}/" rel="noopener" target="_blank">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+                Instagram ${esc(a.artists.instagram.startsWith("@") ? a.artists.instagram : "@" + a.artists.instagram)}</a>`,
+            ].filter(Boolean).join("")}</div>` : ""}
             ${others.length ? `<div class="eyebrow" style="margin-top:16px">Autres œuvres au registre</div>
               <p>${others.map((o) => `<a href="?id=${encodeURIComponent(o.id)}">${esc(o.title)}</a>`).join(" · ")}</p>` : ""}
           </section>
