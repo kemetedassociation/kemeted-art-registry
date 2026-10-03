@@ -6,7 +6,7 @@ export const config = {
 
   // Blockchain (lecture publique, pour le bouton « Vérifier sur la blockchain »)
   NFT_CHAIN: "base-sepolia", // "base" en production
-  NFT_CONTRACT: "0xbe74cfade0b36676c578f02ba0f358a7d08e4799",
+  NFT_CONTRACT: "0x84dcedfb1420e64425234d38a24f9445b8e40135",
   RPC_URL: "https://sepolia.base.org", // https://mainnet.base.org en production
   EXPLORER_URL: "https://sepolia.basescan.org", // https://basescan.org en production
 
