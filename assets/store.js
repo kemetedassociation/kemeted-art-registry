@@ -263,6 +263,24 @@ export async function deleteMedia(id) {
   check(await sb.from("artwork_media").delete().eq("id", id));
 }
 /** Téléverse un fichier audio/vidéo. Les fichiers réservés vont dans un dossier aléatoire non listable. */
+/** Image d'aperçu d'une vidéo, capturée dans le navigateur (≈ 2 s, ou au tiers si plus courte). */
+export function videoPoster(file) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto";
+    v.onloadedmetadata = () => { v.currentTime = Math.min(2.5, (v.duration || 3) / 3); };
+    v.onseeked = () => {
+      const c = document.createElement("canvas");
+      const w = Math.min(1280, v.videoWidth); c.width = w; c.height = Math.round(v.videoHeight * w / v.videoWidth);
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+      c.toBlob((b) => { URL.revokeObjectURL(v.src); resolve(b ? new File([b], "apercu.jpg", { type: "image/jpeg" }) : null); }, "image/jpeg", 0.85);
+    };
+    v.onerror = () => resolve(null);
+    setTimeout(() => resolve(null), 15000);
+    v.src = URL.createObjectURL(file);
+  });
+}
+
 export async function uploadMedia(file, artworkId, audience) {
   if (file.size > 50 * 1024 * 1024) throw new Error("Fichier de plus de 50 Mo : publiez la vidéo sur YouTube (non répertoriée) ou Vimeo et collez le lien.");
   if (DEMO) return uploadImage(file, artworkId);

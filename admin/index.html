@@ -293,7 +293,12 @@
           const f = e.target, file = f.file.files[0];
           const url = file ? await store.uploadMedia(file, a.id, f.audience.value) : f.url.value.trim();
           if (!url) throw new Error("Collez un lien ou choisissez un fichier.");
-          await store.addMedia({ artwork_id: a.id, title: f.title.value.trim(), kind: f.kind.value, audience: f.audience.value, url, position: media.length });
+          let poster_url = null;
+          if (file && file.type.startsWith("video/")) {
+            const poster = await store.videoPoster(file);
+            if (poster) poster_url = await store.uploadMedia(poster, a.id, f.audience.value);
+          }
+          await store.addMedia({ artwork_id: a.id, title: f.title.value.trim(), kind: f.kind.value, audience: f.audience.value, url, poster_url, position: media.length });
           toast("Média ajouté"); route();
         });
       };
