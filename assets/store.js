@@ -239,3 +239,63 @@ export async function transferNft(artworkId, to) {
   if (error) throw new Error((await error.context?.json?.())?.error ?? error.message);
   return data;
 }
+
+// ── Médias (vidéos, audios) et espace propriétaire ─────────────────────────
+// audience "public" : fiche publique · audience "owner" : réservé, délivré contre le code d'accès
+const ensureDemoMedia = () => { demo.media ??= []; demo.owner_codes ??= {}; };
+
+export async function listMedia(artworkId, { audience } = {}) {
+  if (DEMO) {
+    ensureDemoMedia();
+    return demo.media.filter((x) => x.artwork_id === artworkId && (!audience || x.audience === audience))
+      .sort((a, b) => a.position - b.position);
+  }
+  let q = sb.from("artwork_media").select("*").eq("artwork_id", artworkId).order("position").order("created_at");
+  if (audience) q = q.eq("audience", audience);
+  return check(await q);
+}
+export async function addMedia(m) {
+  if (DEMO) { ensureDemoMedia(); demo.media.push({ ...m, id: uid(), position: m.position ?? demo.media.length }); return persist(); }
+  check(await sb.from("artwork_media").insert(m));
+}
+export async function deleteMedia(id) {
+  if (DEMO) { ensureDemoMedia(); demo.media = demo.media.filter((x) => x.id !== id); return persist(); }
+  check(await sb.from("artwork_media").delete().eq("id", id));
+}
+/** Téléverse un fichier audio/vidéo. Les fichiers réservés vont dans un dossier aléatoire non listable. */
+export async function uploadMedia(file, artworkId, audience) {
+  if (file.size > 50 * 1024 * 1024) throw new Error("Fichier de plus de 50 Mo : publiez la vidéo sur YouTube (non répertoriée) ou Vimeo et collez le lien.");
+  if (DEMO) return uploadImage(file, artworkId);
+  const bucket = audience === "owner" ? "owner-media" : "artworks";
+  const folder = audience === "owner" ? crypto.randomUUID() : `${artworkId}/media`;
+  const path = `${folder}/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
+  check(await sb.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type || undefined }));
+  return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+export async function getOwnerCode(artworkId) {
+  if (DEMO) { ensureDemoMedia(); return demo.owner_codes[artworkId] ?? null; }
+  return check(await sb.from("owner_codes").select("code, created_at").eq("artwork_id", artworkId).maybeSingle())?.code ?? null;
+}
+export async function newOwnerCode(artworkId) {
+  if (DEMO) {
+    ensureDemoMedia();
+    const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    demo.owner_codes[artworkId] = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => abc[b % abc.length]).join("");
+    persist();
+    return demo.owner_codes[artworkId];
+  }
+  return check(await sb.rpc("new_owner_code", { p_artwork_id: artworkId }));
+}
+/** Contenus du propriétaire. Lève une erreur si le code est faux. */
+export async function ownerMedia(artworkId, code) {
+  if (DEMO) {
+    ensureDemoMedia();
+    const clean = String(code || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    if (!clean || demo.owner_codes[artworkId] !== clean) throw new Error("code invalide");
+    return listMedia(artworkId, { audience: "owner" });
+  }
+  const { data, error } = await sb.rpc("owner_media", { p_artwork_id: artworkId, p_code: code });
+  if (error) throw new Error(error.message);
+  return data;
+}

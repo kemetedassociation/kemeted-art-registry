@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Espace propriétaire · KEMETED</title>
+  <link rel="icon" href="../assets/logo.png">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <main class="wrap" id="main" style="max-width:760px"><p class="muted" style="padding:60px 0">Chargement…</p></main>
+  <script type="module">
+    import { chrome, esc, mediaPlayer } from "../assets/ui.js";
+    import { getArtwork, ownerMedia } from "../assets/store.js";
+    chrome("../");
+
+    const main = document.getElementById("main");
+    const id = (new URLSearchParams(location.search).get("id") || "").toUpperCase();
+    const a = id ? await getArtwork(id) : null;
+    if (!a) {
+      main.innerHTML = `<p style="padding:60px 0">Œuvre introuvable. Vérifiez le lien reçu avec votre certificat.</p>`;
+    } else {
+      document.title = `Espace propriétaire · ${a.title} · KEMETED`;
+      // Le code voyage dans le fragment (#code=…) : il n'est jamais envoyé aux serveurs ni aux journaux
+      const KEY = "kemeted-owner-" + a.id;
+      let saved = null;
+      try { saved = localStorage.getItem(KEY); } catch {}
+      const fromHash = new URLSearchParams(location.hash.slice(1)).get("code");
+      if (fromHash) history.replaceState(null, "", location.pathname + location.search);
+
+      const header = `
+        <div style="display:grid;grid-template-columns:120px 1fr;gap:20px;align-items:center;padding:40px 0 8px">
+          ${a.image_url ? `<img src="${esc(a.image_url)}" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:4px">` : "<div></div>"}
+          <div><div class="eyebrow">Espace propriétaire · <span class="mono">${esc(a.id)}</span></div>
+            <h1 style="font-size:2.2rem;margin-top:6px">${esc(a.title)}</h1>
+            <div class="artist" style="font-family:var(--serif);font-style:italic;font-size:1.2rem">${esc(a.artists?.name)}</div></div>
+        </div>`;
+
+      const showForm = (error) => {
+        main.innerHTML = header + `
+          <form class="panel stack" id="code-form" style="margin-top:24px">
+            <p style="margin:0">Saisissez le code d'accès remis avec le certificat de l'œuvre.</p>
+            ${error ? `<p class="small" style="color:var(--bad);margin:0">${error}</p>` : ""}
+            <div><label>Code d'accès</label><input name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" style="font-family:var(--mono);letter-spacing:.1em" required></div>
+            <button class="btn">Ouvrir mon espace</button>
+          </form>
+          <p class="small muted" style="margin-top:16px"><a href="../a/?id=${encodeURIComponent(a.id)}">← Fiche publique de l'œuvre</a></p>`;
+        document.getElementById("code-form").onsubmit = (e) => { e.preventDefault(); open(e.target.code.value); };
+      };
+
+      async function open(code) {
+        let media;
+        try { media = await ownerMedia(a.id, code); }
+        catch { try { localStorage.removeItem(KEY); } catch {} return showForm("Ce code ne correspond pas à cette œuvre."); }
+        try { localStorage.setItem(KEY, code); } catch {}
+        main.innerHTML = header + `
+          <section class="section" style="margin-top:20px;border-top:0">
+            <p style="font-family:var(--serif);font-size:1.35rem;line-height:1.4">Merci d'avoir accueilli cette œuvre. Voici les contenus que ${esc(a.artists?.name)} a préparés pour vous.</p>
+          </section>
+          <section class="section">${media.length ? media.map(mediaPlayer).join("") : `<p class="muted">Aucun contenu pour le moment. Les messages de l'artiste apparaîtront ici dès qu'ils seront ajoutés.</p>`}</section>
+          <section class="section small muted">
+            Ces contenus vous sont réservés : merci de ne pas partager votre code. En cas de revente, KEMETED remet un nouveau code au nouveau propriétaire.<br>
+            <a href="../a/?id=${encodeURIComponent(a.id)}">← Fiche publique et certificat</a> · <a href="#" id="forget">Oublier ce code sur cet appareil</a>
+          </section>`;
+        document.getElementById("forget").onclick = (e) => { e.preventDefault(); try { localStorage.removeItem(KEY); } catch {} showForm(); };
+      }
+
+      // Lien collé dans un onglet déjà ouvert sur cette page : seul le fragment change, on relit le code
+      addEventListener("hashchange", () => { if (location.hash.includes("code=")) location.reload(); });
+      const code = fromHash || saved;
+      if (code) await open(code); else showForm();
+    }
+  </script>
+</body>
+</html>

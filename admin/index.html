@@ -11,7 +11,7 @@
 <body>
   <main class="wrap" id="main"></main>
   <script type="module">
-    import { chrome, esc, fmtDate, toast, STATUS } from "../assets/ui.js";
+    import { chrome, esc, fmtDate, toast, STATUS, mediaPlayer } from "../assets/ui.js";
     import * as store from "../assets/store.js";
     import { config } from "../assets/config.js";
     chrome("../", { admin: true });
@@ -165,7 +165,8 @@
 
     async function sidePanels(a) {
       const side = document.getElementById("side");
-      const [owners, tags] = await Promise.all([store.listOwnerships(a.id), store.listTags()]);
+      const [owners, tags, media, ownerCode] = await Promise.all([store.listOwnerships(a.id), store.listTags(), store.listMedia(a.id), store.getOwnerCode(a.id)]);
+      const ownerLink = (code) => `${ROOT}proprietaire/?id=${encodeURIComponent(a.id)}#code=${code}`;
       const tag = tags.find((t) => t.artwork_id === a.id);
       const url = publicUrl(a.id);
       const isHttps = url.startsWith("https://");
@@ -224,6 +225,38 @@
         </div>
 
         <div class="panel stack">
+          <h3>Médias de l'artiste</h3>
+          ${media.length ? `<table class="list"><tbody>${media.map((m) => `<tr>
+            <td>${m.kind === "audio" ? "Audio" : "Vidéo"}</td>
+            <td><b>${esc(m.title)}</b><div class="small muted">${m.audience === "owner" ? "Réservé au propriétaire" : "Public"}</div></td>
+            <td><button type="button" class="btn small ghost" data-del-media="${esc(m.id)}">Retirer</button></td></tr>`).join("")}</tbody></table>`
+            : `<p class="small muted">Aucun média. Ajoutez la présentation de l'artiste, le making-of, un message de remerciement.</p>`}
+          <details><summary class="small"><b>Ajouter une vidéo ou un audio</b></summary>
+            <form id="media-form" class="stack" style="margin-top:10px">
+              <div><label>Titre</label><input name="title" required placeholder="Claudine Dan présente Danse du Ciel"></div>
+              <div class="grid2">
+                <div><label>Type</label><select name="kind"><option value="video">Vidéo</option><option value="audio">Audio</option></select></div>
+                <div><label>Visible par</label><select name="audience"><option value="public">Tout le monde (fiche)</option><option value="owner">Le propriétaire seulement</option></select></div>
+              </div>
+              <div><label>Lien YouTube / Vimeo (vidéo de plus de 50 Mo)</label><input name="url" type="url" placeholder="https://youtu.be/…"></div>
+              <div><label>… ou fichier (moins de 50 Mo)</label><input name="file" type="file" accept="video/*,audio/*"></div>
+              <p class="small muted" style="margin:0">Pour une vidéo réservée, mettez-la « non répertoriée » sur YouTube : seul le propriétaire verra le lien.</p>
+              <button class="btn small">Ajouter</button>
+            </form></details>
+        </div>
+
+        <div class="panel stack">
+          <h3>Espace propriétaire</h3>
+          ${ownerCode
+            ? `<p class="small">Code d'accès : <b class="mono" style="font-size:1rem">${esc(ownerCode.replace(/(.{4})(?=.)/g, "$1-"))}</b></p>
+               <div><label>Lien à remettre à l'acheteur</label><code class="block" id="owner-link">${esc(ownerLink(ownerCode))}</code></div>
+               <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="copy-owner">Copier le lien</button>
+               <button type="button" class="btn small ghost" id="new-code">Nouveau code (après une revente)</button></div>`
+            : `<p class="small muted">Générez un code pour donner à l'acheteur l'accès à ses contenus réservés.</p>
+               <button type="button" class="btn small" id="new-code">Générer le code d'accès</button>`}
+        </div>
+
+        <div class="panel stack">
           <h3>Jumeau numérique (NFT)</h3>
           ${a.nft_token_id
             ? `<p class="small">Jeton n° <b>${esc(a.nft_token_id)}</b> · ${esc(a.nft_chain)} · ${fmtDate(a.nft_minted_at)}</p>
@@ -254,6 +287,27 @@
         e.preventDefault();
         busy(e.submitter, async () => { await store.transferOwnership(a.id, formData(e.target)); toast("Transfert enregistré"); route(); });
       };
+      document.getElementById("media-form").onsubmit = (e) => {
+        e.preventDefault();
+        busy(e.submitter, async () => {
+          const f = e.target, file = f.file.files[0];
+          const url = file ? await store.uploadMedia(file, a.id, f.audience.value) : f.url.value.trim();
+          if (!url) throw new Error("Collez un lien ou choisissez un fichier.");
+          await store.addMedia({ artwork_id: a.id, title: f.title.value.trim(), kind: f.kind.value, audience: f.audience.value, url, position: media.length });
+          toast("Média ajouté"); route();
+        });
+      };
+      side.querySelectorAll("[data-del-media]").forEach((btn) => (btn.onclick = () => {
+        if (!confirm("Retirer ce média de la fiche ?")) return;
+        busy(btn, async () => { await store.deleteMedia(btn.dataset.delMedia); toast("Média retiré"); route(); });
+      }));
+      document.getElementById("new-code")?.addEventListener("click", (e) => {
+        if (ownerCode && !confirm("Créer un nouveau code ? L'ancien lien ne fonctionnera plus (à faire après une revente).")) return;
+        busy(e.target, async () => { await store.newOwnerCode(a.id); toast("Code d'accès créé"); route(); });
+      });
+      document.getElementById("copy-owner")?.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(ownerLink(ownerCode)); toast("Lien copié"); } catch { toast("Copie impossible : sélectionnez le lien à la main", true); }
+      });
       document.getElementById("mint")?.addEventListener("click", (e) => {
         if (!confirm(`Créer le NFT de ${a.id} « ${a.title} » ? L'identité de l'œuvre sera gravée définitivement.`)) return;
         busy(e.target, async () => { const r = await store.mintNft(a.id); toast(`NFT créé : jeton n° ${r.token_id}`); route(); });

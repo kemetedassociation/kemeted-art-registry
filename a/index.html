@@ -11,8 +11,8 @@
 <body>
   <main class="wrap" id="main"><p class="muted" style="padding:60px 0">Chargement du passeport…</p></main>
   <script type="module">
-    import { chrome, esc, fmtDate, fmtPrice, STATUS } from "../assets/ui.js";
-    import { getArtwork, verifyScan, artworksByArtist, DEMO } from "../assets/store.js";
+    import { chrome, esc, fmtDate, fmtPrice, STATUS, mediaPlayer } from "../assets/ui.js";
+    import { getArtwork, verifyScan, artworksByArtist, listMedia, DEMO } from "../assets/store.js";
     import { config } from "../assets/config.js";
     import { canonicalCertificate, certificateHash } from "../supabase/functions/_shared/certificate.js";
     chrome("../");
@@ -42,6 +42,7 @@
 
     const statusPill = STATUS[a.status];
     const others = (await artworksByArtist(a.artist_id)).filter((x) => x.id !== a.id);
+    const media = await listMedia(a.id, { audience: "public" }).catch(() => []);
     const provenance = [
       a.year && { sort: `${a.year}-00`, date: String(a.year), text: `Création par ${esc(a.artists?.name)}` },
       a.certificate_issued_at && { sort: String(a.certificate_issued_at).slice(0, 10), date: fmtDate(a.certificate_issued_at), text: "Enregistrement au registre KEMETED et délivrance du certificat" },
@@ -82,6 +83,12 @@
             ${others.length ? `<div class="eyebrow" style="margin-top:16px">Autres œuvres au registre</div>
               <p>${others.map((o) => `<a href="?id=${encodeURIComponent(o.id)}">${esc(o.title)}</a>`).join(" · ")}</p>` : ""}
           </section>
+
+          ${media.length ? `<section class="section" id="rencontre"><h2>Rencontre avec l'artiste</h2>${media.map(mediaPlayer).join("")}</section>` : ""}
+
+          ${a.status === "vendue" ? `<section class="section no-print"><div class="owner-cta">
+            <div><strong>Vous êtes propriétaire de cette œuvre ?</strong><div class="small muted">Message de l'artiste, making-of complet : vos contenus réservés.</div></div>
+            <a class="btn small" href="../proprietaire/?id=${encodeURIComponent(a.id)}">Accéder à mon espace</a></div></section>` : ""}
 
           <section class="section"><h2>Histoire et provenance</h2>
             <ul class="timeline">${provenance.map((e) => `<li><div class="small muted">${e.date}</div><div>${e.text}</div></li>`).join("")}</ul>

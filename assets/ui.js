@@ -36,3 +36,16 @@ export function toast(msg, err = false) {
   document.body.append(el);
   setTimeout(() => el.remove(), err ? 6000 : 3000);
 }
+
+/** Lecteur d'un média : YouTube / Vimeo intégrés, fichier vidéo ou audio téléversé. */
+export function mediaPlayer(m) {
+  const url = String(m.url || "");
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+  const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)(?:\/(\w+))?/);
+  let player;
+  if (yt) player = `<div class="embed"><iframe src="https://www.youtube-nocookie.com/embed/${yt[1]}?rel=0" title="${esc(m.title)}" allow="encrypted-media; picture-in-picture; fullscreen" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+  else if (vimeo) player = `<div class="embed"><iframe src="https://player.vimeo.com/video/${vimeo[1]}${vimeo[2] ? "?h=" + vimeo[2] : ""}" title="${esc(m.title)}" allow="fullscreen; picture-in-picture" loading="lazy"></iframe></div>`;
+  else if (m.kind === "audio") player = `<audio controls preload="metadata" src="${esc(url)}"></audio>`;
+  else player = `<video controls playsinline preload="metadata" src="${esc(url)}"></video>`;
+  return `<figure class="media"><figcaption>${m.kind === "audio" ? "Écouter" : "Regarder"} · <b>${esc(m.title)}</b></figcaption>${player}</figure>`;
+}

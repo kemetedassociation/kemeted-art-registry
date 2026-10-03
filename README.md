@@ -29,6 +29,7 @@ L'espace admin (`/admin/`) permet d'enregistrer artistes, œuvres et expositions
 index.html                 registre public (liste des œuvres)
 a/index.html               passeport d'une œuvre : /a/?id=KEM-CUL-0001
 admin/index.html           espace KEMETED
+proprietaire/index.html    espace propriétaire (contenus réservés, ouvert par code d'accès)
 assets/                    styles, config publique, couche de données (Supabase ou démo)
 supabase/migrations/       schéma Postgres + sécurité RLS
 supabase/functions/
@@ -54,7 +55,7 @@ npm run test:contract    # contrat sur une blockchain locale Hardhat
 ### 1. Supabase (nouveau projet dédié)
 
 1. Créer un projet sur supabase.com (région Europe).
-2. Exécuter `supabase/migrations/20261002000000_registry.sql` dans l'éditeur SQL.
+2. Exécuter les fichiers de `supabase/migrations/` dans l'ordre, dans l'éditeur SQL.
 3. Créer le compte administrateur (Authentication → Users → Add user), puis :
    ```sql
    insert into public.admins(user_id) select id from auth.users where email = 'kemeted.association@gmail.com';
@@ -104,6 +105,15 @@ L'espace admin affiche pour chaque œuvre l'URL à écrire et les offsets exacts
 2. Mettre SUN_META_KEY en clé 1 et SUN_FILE_KEY en clé 2, puis changer la clé maître (clé 0).
 3. Scanner la puce : son UID apparaît (journal des scans, « puce inconnue »). Le lier à l'œuvre dans l'admin.
 4. Coller la puce sous le châssis avec une étiquette anti-décollement. Coller le QR code sur le cartel.
+
+## Médias et espace propriétaire
+
+Dans l'admin, chaque œuvre peut recevoir des vidéos et des audios de l'artiste :
+
+- **Public** : affichés sur la fiche, section « Rencontre avec l'artiste ».
+- **Propriétaire** : visibles seulement dans `/proprietaire/?id=…`, avec le code d'accès généré dans l'admin. Le lien à remettre à l'acheteur porte le code après `#`, il n'est donc jamais transmis aux serveurs. Après une revente, générer un nouveau code coupe l'accès de l'ancien propriétaire.
+
+Les vidéos de plus de 50 Mo vont sur YouTube (non répertoriée) ou Vimeo : on colle le lien. Les fichiers réservés téléversés sont rangés dans un dossier aléatoire non listable.
 
 ## Ce que le système garantit
 
