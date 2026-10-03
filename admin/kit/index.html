@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Kit acheteur · KEMETED</title>
+  <link rel="icon" href="../../assets/logo.png">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    body { background: #e9e5dc; }
+    .toolbar { max-width: 210mm; margin: 20px auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 0 16px; }
+    .sheet { background: #fffdf8; color: #161412; width: 210mm; min-height: 297mm; margin: 0 auto 32px; padding: 16mm 16mm 14mm; box-shadow: 0 10px 40px -18px rgba(0,0,0,.4); display: flex; flex-direction: column; }
+    .sheet + .sheet { page-break-before: always; }
+    .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd5c6; padding-bottom: 6mm; }
+    .head img { width: 18mm; height: 18mm; object-fit: cover; object-position: 50% 30%; mix-blend-mode: multiply; }
+    .head .ref { text-align: right; font-size: 9pt; color: #6d665c; }
+    h1.cert-title { font-size: 26pt; margin: 9mm 0 2mm; }
+    .sub { color: #6d665c; font-size: 10.5pt; letter-spacing: .14em; text-transform: uppercase; }
+    .art { display: grid; grid-template-columns: 62mm 1fr; gap: 9mm; margin-top: 9mm; align-items: start; }
+    .art img { width: 62mm; border: 1px solid #ddd5c6; padding: 2.5mm; background: #fff; }
+    .rows .r { display: flex; justify-content: space-between; gap: 6mm; padding: 2.2mm 0; border-bottom: 1px dashed #ddd5c6; font-size: 10.5pt; }
+    .rows .r span:first-child { color: #6d665c; flex-shrink: 0; }
+    .rows .r span:last-child { text-align: right; }
+    .hash { font: 8pt/1.4 "JetBrains Mono", monospace; word-break: break-all; color: #6d665c; margin-top: 3mm; }
+    .qrs { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 10mm; }
+    .qr { border: 1px solid #ddd5c6; border-radius: 3mm; padding: 5mm; display: grid; grid-template-columns: 30mm 1fr; gap: 5mm; align-items: center; font-size: 9.5pt; }
+    .qr img { width: 30mm; height: 30mm; image-rendering: pixelated; }
+    .qr b { display: block; font-size: 10.5pt; margin-bottom: 1.5mm; }
+    .code { font: 600 13pt "JetBrains Mono", monospace; letter-spacing: .12em; margin-top: 2mm; }
+    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: auto; padding-top: 12mm; font-size: 9.5pt; color: #6d665c; }
+    .sign div { border-top: 1px solid #161412; padding-top: 2mm; }
+    .foot { font-size: 8pt; color: #6d665c; margin-top: 6mm; text-align: center; }
+    .letter p { font-size: 11pt; line-height: 1.6; margin: 0 0 4mm; }
+    @media print {
+      @page { size: A4; margin: 0; }
+      body { background: #fff; }
+      .toolbar, header.site, footer.site { display: none !important; }
+      .sheet { box-shadow: none; margin: 0; width: auto; min-height: 297mm; }
+    }
+    @media screen and (max-width: 820px) { .sheet { width: auto; min-height: 0; margin: 0 8px 24px; padding: 20px; } .art, .qrs { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar" id="toolbar"><span class="muted">Chargement…</span></div>
+  <div id="sheets"></div>
+  <script type="module">
+    import { esc, fmtDate, fmtPrice } from "../../assets/ui.js";
+    import * as store from "../../assets/store.js";
+    import { config } from "../../assets/config.js";
+
+    const bar = document.getElementById("toolbar"), sheets = document.getElementById("sheets");
+    const id = (new URLSearchParams(location.search).get("id") || "").toUpperCase();
+    const ROOT = new URL("../../", location.href).href;
+    const user = await store.currentAdmin();
+    if (!user) {
+      bar.innerHTML = `Réservé aux administrateurs. <a href="../">Se connecter</a>`;
+    } else {
+      const a = await store.getArtwork(id);
+      if (!a) { bar.textContent = "Œuvre introuvable : " + id; }
+      else {
+        const [owners, code] = await Promise.all([store.listOwnerships(a.id), store.getOwnerCode(a.id)]);
+        const owner = owners.find((o) => o.current);
+        const QR = (await import("https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm")).default;
+        const qr = (text) => QR.toDataURL(text, { margin: 1, width: 600, errorCorrectionLevel: "M" });
+        const publicUrl = `${ROOT}a/?id=${encodeURIComponent(a.id)}`;
+        const ownerUrl = code ? `${ROOT}proprietaire/?id=${encodeURIComponent(a.id)}#code=${code}` : null;
+        const [qrPublic, qrOwner] = await Promise.all([qr(publicUrl), ownerUrl ? qr(ownerUrl) : null]);
+        const chain = a.nft_chain === "base" ? "Base" : a.nft_chain === "base-sepolia" ? "Base Sepolia (réseau de test)" : a.nft_chain;
+        const prettyCode = code ? code.replace(/(.{4})(?=.)/g, "$1-") : "";
+
+        const missing = [!owner && "aucun propriétaire enregistré (onglet Propriété)", !code && "pas de code d'accès propriétaire (panneau Espace propriétaire)"].filter(Boolean);
+        bar.innerHTML = `<a class="btn small ghost" href="../#artwork/${encodeURIComponent(a.id)}">← Retour à l'œuvre</a>
+          <button class="btn small" onclick="print()">Imprimer / PDF</button>
+          ${missing.length ? `<span class="small" style="color:var(--warn)">À compléter : ${missing.join(" ; ")}.</span>` : `<span class="small muted">Deux pages A4 : certificat + lettre d'accueil.</span>`}`;
+        document.title = `Kit acheteur ${a.id} · ${a.title}`;
+
+        sheets.innerHTML = `
+          <section class="sheet">
+            <div class="head"><img src="../../assets/logo.png" alt="KEMETED"><div class="ref">KEMETED Art Registry<br><span class="mono">${esc(a.id)}</span></div></div>
+            <div class="sub" style="margin-top:9mm">Certificat d'authenticité et d'acquisition</div>
+            <h1 class="cert-title">${esc(a.title)}</h1>
+            <div style="font-family:var(--serif);font-style:italic;font-size:15pt">${esc(a.artists?.name)}${a.year ? ", " + a.year : ""}</div>
+            <div class="art">
+              ${a.image_url ? `<img src="${esc(a.image_url)}" alt="">` : "<div></div>"}
+              <div class="rows">
+                <div class="r"><span>Identifiant KEMETED</span><span class="mono">${esc(a.id)}</span></div>
+                <div class="r"><span>Artiste</span><span>${esc(a.artists?.name)}</span></div>
+                ${a.technique ? `<div class="r"><span>Technique</span><span>${esc(a.technique)}</span></div>` : ""}
+                ${a.dimensions ? `<div class="r"><span>Dimensions</span><span>${esc(a.dimensions)}</span></div>` : ""}
+                ${a.certificate_issued_at ? `<div class="r"><span>Certificat délivré le</span><span>${fmtDate(a.certificate_issued_at)}</span></div>` : ""}
+                <div class="r"><span>Propriétaire</span><span>${owner ? esc(owner.owner_name) : "—"}</span></div>
+                <div class="r"><span>Date d'acquisition</span><span>${owner ? fmtDate(owner.acquired_on) : "—"}</span></div>
+                ${a.nft_token_id ? `<div class="r"><span>Jumeau numérique</span><span>Jeton n° ${esc(a.nft_token_id)} · ${esc(chain)}</span></div>` : ""}
+                ${a.nft_token_id ? `<div class="hash">Contrat ${esc(a.nft_contract || config.NFT_CONTRACT)}<br>Empreinte du certificat ${esc(a.certificate_hash)}</div>` : ""}
+              </div>
+            </div>
+            <div class="qrs">
+              <div class="qr"><img src="${qrPublic}" alt=""><div><b>Fiche officielle</b>Passeport public de l'œuvre, vérification de l'authenticité et du certificat sur la blockchain.</div></div>
+              ${qrOwner ? `<div class="qr"><img src="${qrOwner}" alt=""><div><b>Votre espace propriétaire</b>Contenus réservés de l'artiste. Code personnel :<div class="code">${esc(prettyCode)}</div></div></div>` : `<div class="qr" style="display:block;color:#a8452b">Code d'accès propriétaire non généré.</div>`}
+            </div>
+            <div class="sign"><div>Pour KEMETED &amp; Association</div><div>L'artiste, ${esc(a.artists?.name)}</div></div>
+            <div class="foot">Ce certificat accompagne l'œuvre physique, qui porte une puce NFC sécurisée. Il ne transfère aucun droit d'auteur. Code personnel à ne pas partager.</div>
+          </section>
+
+          <section class="sheet letter">
+            <div class="head"><img src="../../assets/logo.png" alt="KEMETED"><div class="ref">KEMETED Art Registry<br><span class="mono">${esc(a.id)}</span></div></div>
+            <h1 class="cert-title" style="font-size:22pt">Bienvenue${owner ? ", " + esc(owner.owner_name) : ""}</h1>
+            <p>Vous accueillez <b>${esc(a.title)}</b> de ${esc(a.artists?.name)}. Cette œuvre possède désormais une identité, une histoire et une trace numérique, enregistrées dans le registre KEMETED.</p>
+            <p><b>Vérifier l'authenticité.</b> Approchez votre téléphone de la puce placée au dos de l'œuvre : la fiche officielle s'ouvre et affiche « Œuvre authentifiée ». Le QR code du certificat ouvre la même fiche, sans la vérification physique.</p>
+            <p><b>Le certificat sur la blockchain.</b> Sur la fiche, le bouton « Vérifier sur la blockchain » compare le certificat affiché à celui gravé lors de l'enregistrement. Personne, KEMETED compris, ne peut le modifier.</p>
+            <p><b>Votre espace propriétaire.</b> Le second QR code et votre code personnel donnent accès aux contenus que l'artiste a préparés pour vous. Gardez ce code pour vous.</p>
+            <p><b>Votre vie privée.</b> Votre nom n'apparaît pas publiquement, sauf accord écrit de votre part. Aucune donnée personnelle n'est inscrite sur la blockchain.</p>
+            <p><b>En cas de revente ou de don</b>, prévenez KEMETED : nous enregistrons le nouveau propriétaire et lui remettons un nouveau code. L'historique de l'œuvre la suit.</p>
+            <p>Merci de faire vivre l'œuvre de ${esc(a.artists?.name)}.</p>
+            <div class="sign" style="grid-template-columns:1fr"><div>KEMETED &amp; Association · ${esc(config.CONTACT_EMAIL)}</div></div>
+          </section>`;
+      }
+    }
+  </script>
+</body>
+</html>

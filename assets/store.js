@@ -100,6 +100,11 @@ export async function signIn(email, password) {
   check(await sb.auth.signInWithPassword({ email, password }));
 }
 export async function signOut() { if (!DEMO) await sb.auth.signOut(); }
+export async function changePassword(password) {
+  if (DEMO) throw new Error("Indisponible en mode démo.");
+  if (String(password).length < 12) throw new Error("12 caractères minimum.");
+  check(await sb.auth.updateUser({ password }));
+}
 
 // ── Écriture (admin) ────────────────────────────────────────────────────────
 export async function listArtists() {

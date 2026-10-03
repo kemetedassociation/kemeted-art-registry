@@ -56,7 +56,7 @@
       <div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;padding-top:32px">
         <div><div class="eyebrow">Espace KEMETED</div><h1 style="font-size:2.4rem">Registre des œuvres</h1></div>
         <div style="display:flex;gap:8px">
-          ${store.DEMO ? `<button class="btn ghost small" id="reset">Réinitialiser la démo</button>` : `<button class="btn ghost small" id="logout">Déconnexion</button>`}
+          ${store.DEMO ? `<button class="btn ghost small" id="reset">Réinitialiser la démo</button>` : `<button class="btn ghost small" id="pwd">Mot de passe</button><button class="btn ghost small" id="logout">Déconnexion</button>`}
         </div>
       </div>
       <div class="tabs" role="tablist">
@@ -66,6 +66,19 @@
       <div id="view"></div>`;
     document.getElementById("reset")?.addEventListener("click", () => { store.resetDemo(); location.hash = ""; location.reload(); });
     document.getElementById("logout")?.addEventListener("click", async () => { await store.signOut(); location.reload(); });
+    document.getElementById("pwd")?.addEventListener("click", () => {
+      view.innerHTML = `<form class="panel stack" id="pwd-form" style="max-width:420px">
+        <h3>Changer le mot de passe</h3>
+        <div><label>Nouveau mot de passe (12 caractères minimum)</label><input name="p1" type="password" minlength="12" required autocomplete="new-password"></div>
+        <div><label>Confirmer</label><input name="p2" type="password" minlength="12" required autocomplete="new-password"></div>
+        <div style="display:flex;gap:8px"><button class="btn small">Enregistrer</button><a class="btn small ghost" href="#artworks">Annuler</a></div></form>`;
+      document.getElementById("pwd-form").onsubmit = (e) => {
+        e.preventDefault();
+        const { p1, p2 } = e.target;
+        if (p1.value !== p2.value) return toast("Les deux mots de passe ne correspondent pas.", true);
+        busy(e.submitter, async () => { await store.changePassword(p1.value); toast("Mot de passe changé"); location.hash = "artworks"; });
+      };
+    });
     const view = document.getElementById("view");
 
     // ── Routage simple par ancre : #artworks, #artwork/KEM-CUL-0001, #artwork/new, #artists… ──
@@ -247,6 +260,7 @@
 
         <div class="panel stack">
           <h3>Espace propriétaire</h3>
+          <a class="btn small ghost" href="kit/?id=${encodeURIComponent(a.id)}" target="_blank">Imprimer le kit acheteur (certificat + lettre)</a>
           ${ownerCode
             ? `<p class="small">Code d'accès : <b class="mono" style="font-size:1rem">${esc(ownerCode.replace(/(.{4})(?=.)/g, "$1-"))}</b></p>
                <div><label>Lien à remettre à l'acheteur</label><code class="block" id="owner-link">${esc(ownerLink(ownerCode))}</code></div>
