@@ -21,6 +21,7 @@
       good: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
       info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 11v6M12 7.2v.1"/></svg>`,
       warn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 7v6M12 16.8v.1"/></svg>`,
+      nfc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 8a5 5 0 0 1 0 8M12 5.5a8.5 8.5 0 0 1 0 13M5 10.5a1.8 1.8 0 0 1 0 3"/></svg>`,
       bad: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>`,
     };
     const verdict = (tone, title, text) =>
@@ -29,6 +30,8 @@
     const params = new URLSearchParams(location.search);
     const id = (params.get("id") || "").toUpperCase();
     const p = params.get("p"), m = params.get("m");
+    // src=nfc : puce NFC simple (présentation), URL fixe sans signature : on l'accueille sans prétendre l'authentifier
+    const fromSimpleChip = params.get("src") === "nfc";
     const main = document.getElementById("main");
 
     const a = id ? await getArtwork(id) : null;
@@ -174,11 +177,17 @@
       let recent = null;
       try { recent = JSON.parse(sessionStorage.getItem(KEY)); } catch {}
       r = recent?.status === "authentique" && Date.now() - recent.at < 30 * 60e3 ? { ...recent, cached: true } : await verifyScan(a.id).catch(() => ({ status: "erreur" }));
+      if (fromSimpleChip) {
+        if (r.status === "qr") r = { status: "puce_simple" };
+        history.replaceState(null, "", `?id=${encodeURIComponent(a.id)}`); // un lien partagé n'affiche pas ce message
+      }
     }
     const ago = r.cached ? ` (vérifiée il y a ${Math.max(1, Math.round((Date.now() - r.at) / 60e3))} min)` : "";
     box.innerHTML = {
       authentique: verdict("good", "Œuvre authentifiée par KEMETED" + ago,
         `La puce sécurisée fixée sur cette œuvre a été vérifiée par le registre. Cette œuvre est enregistrée sous la référence ${esc(a.id)}.`),
+      puce_simple: verdict("nfc", "Œuvre enregistrée au registre KEMETED",
+        "Vous venez de scanner la puce de cette œuvre : voici son passeport officiel, son histoire et son certificat. Cette puce de présentation ouvre la fiche. Les œuvres certifiées par KEMETED reçoivent une puce sécurisée, qui authentifie l'original à chaque scan et ne peut pas être copiée."),
       qr: verdict("info", "Fiche officielle du registre KEMETED",
         "Vous consultez cette fiche par un QR code ou un lien. Pour vérifier que l'œuvre devant vous est l'originale, approchez votre téléphone de sa puce NFC."),
       rejoue: verdict("warn", "Ce lien de vérification a déjà servi",

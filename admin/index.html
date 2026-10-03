@@ -203,6 +203,17 @@
           <form id="tag-form" class="stack"><div><label>UID de la puce (14 caractères hex)</label><input name="uid" placeholder="04DE5F1EACC040" required></div>
             <button class="btn small">${tag ? "Remplacer la puce" : "Lier la puce"}</button></form>
           ${tag && !tag.revoked ? `<button class="btn small ghost" id="revoke">Désactiver cette puce (perte, vol)</button>` : ""}
+          <details class="small"><summary><b>Puce simple de présentation</b> (NTAG 213 / 215, démonstration)</summary>
+            <div class="stack" style="margin-top:10px">
+              <p style="margin:0">Pour une exposition ou un concours, avant l'arrivée des puces sécurisées. La fiche s'ouvre avec le message « Œuvre enregistrée au registre KEMETED », sans affirmer l'authenticité : une puce simple se copie.</p>
+              <code class="block">${esc(url)}&src=nfc</code>
+              <button type="button" class="btn small ghost" id="copy-simple">Copier l'adresse</button>
+              <ol style="margin:0;padding-left:18px">
+                <li>Installer l'application gratuite NFC Tools (iPhone ou Android).</li>
+                <li>Écrire → Ajouter un enregistrement → URL / URI, coller l'adresse ci-dessus.</li>
+                <li>Écrire, puis approcher la puce. Ne pas la verrouiller : il faudra la réécrire quand l'adresse définitive du registre sera choisie.</li>
+              </ol>
+            </div></details>
           <details class="small"><summary><b>Réglages à programmer dans la puce</b> (NTAG 424 DNA, SUN)</summary>
             <div class="stack" style="margin-top:10px">
               ${isHttps ? "" : `<p style="color:var(--warn)">Le site doit être servi en https pour les vraies puces. Ces réglages sont calculés pour l'adresse actuelle.</p>`}
@@ -289,6 +300,9 @@
       const svg = await QR.toString(url, { type: "svg", margin: 2, errorCorrectionLevel: "M" });
       document.getElementById("qr-svg").href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 
+      document.getElementById("copy-simple").onclick = async () => {
+        try { await navigator.clipboard.writeText(`${url}&src=nfc`); toast("Adresse copiée"); } catch { toast("Copie impossible : sélectionnez l'adresse à la main", true); }
+      };
       document.getElementById("tag-form").onsubmit = (e) => {
         e.preventDefault();
         busy(e.submitter, async () => { await store.linkTag(e.target.uid.value, a.id); toast("Puce liée"); route(); });

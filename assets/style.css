@@ -118,6 +118,9 @@ input[type="checkbox"] { width: auto; }
 .verdict.warn .seal { background: var(--warn); color: var(--warn-bg); }
 .verdict.bad { background: var(--bad-bg); color: var(--bad); }
 .verdict.bad .seal { background: var(--bad); color: var(--bad-bg); }
+.verdict.nfc { background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.verdict.nfc .seal { background: var(--accent); color: var(--card); }
+.verdict.nfc strong { color: var(--accent); }
 .verdict.loading { background: var(--info-bg); color: var(--muted); }
 .verdict.loading .seal { border: 2px solid var(--line); border-top-color: var(--ink); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
