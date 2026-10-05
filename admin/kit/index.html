@@ -13,7 +13,7 @@
     .sheet { background: #fffdf8; color: #161412; width: 210mm; min-height: 297mm; margin: 0 auto 32px; padding: 16mm 16mm 14mm; box-shadow: 0 10px 40px -18px rgba(0,0,0,.4); display: flex; flex-direction: column; }
     .sheet + .sheet { page-break-before: always; }
     .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd5c6; padding-bottom: 6mm; }
-    .head img { width: 18mm; height: 18mm; object-fit: cover; object-position: 50% 30%; mix-blend-mode: multiply; }
+    .head img { width: 18mm; height: 18mm; object-fit: contain; background: #fff; border-radius: 2mm; padding: 1mm; border: 1px solid #ddd5c6; }
     .head .ref { text-align: right; font-size: 9pt; color: #6d665c; }
     h1.cert-title { font-size: 26pt; margin: 9mm 0 2mm; }
     .sub { color: #6d665c; font-size: 10.5pt; letter-spacing: .14em; text-transform: uppercase; }
@@ -28,7 +28,7 @@
     .qr img { width: 30mm; height: 30mm; image-rendering: pixelated; }
     .qr b { display: block; font-size: 10.5pt; margin-bottom: 1.5mm; }
     .code { font: 600 13pt "JetBrains Mono", monospace; letter-spacing: .12em; margin-top: 2mm; }
-    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: auto; padding-top: 12mm; font-size: 9.5pt; color: #6d665c; }
+    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: auto; padding-top: 22mm; font-size: 9.5pt; color: #6d665c; }
     .sign div { border-top: 1px solid #161412; padding-top: 2mm; }
     .foot { font-size: 8pt; color: #6d665c; margin-top: 6mm; text-align: center; }
     .letter p { font-size: 11pt; line-height: 1.6; margin: 0 0 4mm; }
@@ -99,7 +99,13 @@
               <div class="qr"><img src="${qrPublic}" alt=""><div><b>Fiche officielle</b>Passeport public de l'œuvre, vérification de l'authenticité et du certificat sur la blockchain.</div></div>
               ${qrOwner ? `<div class="qr"><img src="${qrOwner}" alt=""><div><b>Votre espace propriétaire</b>Contenus réservés de l'artiste. Code personnel :<div class="code">${esc(prettyCode)}</div></div></div>` : `<div class="qr" style="display:block;color:#a8452b">Code d'accès propriétaire non généré.</div>`}
             </div>
-            <div class="sign"><div>Pour KEMETED &amp; Association</div><div>L'artiste, ${esc(a.artists?.name)}</div></div>
+            <div class="sign">
+              <div>Pour KEMETED &amp; Association</div>
+              <div style="position:relative">${a.artists?.signature_url ? `<img src="${esc(a.artists.signature_url)}" alt="" style="position:absolute;bottom:calc(100% + 1mm);left:0;height:18mm;width:auto">` : ""}L'artiste, ${esc(a.artists?.name)}</div>
+            </div>
+            ${a.artists?.adagp ? `<div style="display:flex;align-items:center;justify-content:center;gap:4mm;margin-top:6mm;font-size:8.5pt;color:#6d665c">
+              <img src="../../assets/adagp-logo.svg" alt="ADAGP" style="height:10mm;width:auto">
+              <span>${esc(a.artists.name)} est membre de l'ADAGP · © ${esc(a.artists.name)} / ADAGP, Paris ${a.year || new Date().getFullYear()}</span></div>` : ""}
             <div class="foot">Ce certificat accompagne l'œuvre physique, qui porte une puce NFC sécurisée. Il ne transfère aucun droit d'auteur. Code personnel à ne pas partager.</div>
           </section>
 

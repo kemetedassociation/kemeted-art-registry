@@ -12,7 +12,8 @@
   <main class="wrap" id="main"><p class="muted" style="padding:60px 0">Chargement du passeport…</p></main>
   <script type="module">
     import { chrome, esc, fmtDate, fmtPrice, STATUS, mediaPlayer } from "../assets/ui.js";
-    import { getArtwork, verifyScan, artworksByArtist, listMedia, DEMO } from "../assets/store.js";
+    import { getArtwork, verifyScan, artworksByArtist, listMedia, ownerMediaTitles, ownerUnlock, DEMO } from "../assets/store.js";
+    import { mountVoice, openKeypad } from "../assets/voice.js";
     import { config } from "../assets/config.js";
     import { canonicalCertificate, certificateHash } from "../supabase/functions/_shared/certificate.js";
     chrome("../");
@@ -45,7 +46,11 @@
 
     const statusPill = STATUS[a.status];
     const others = (await artworksByArtist(a.artist_id)).filter((x) => x.id !== a.id);
-    const media = await listMedia(a.id, { audience: "public" }).catch(() => []);
+    const allPublic = await listMedia(a.id, { audience: "public" }).catch(() => []);
+    const intro = allPublic.find((m) => m.role === "intro");
+    const media = allPublic.filter((m) => !m.role);
+    const locked = await ownerMediaTitles(a.id).catch(() => []);
+    const year = a.year || new Date().getFullYear();
     const provenance = [
       a.year && { sort: `${a.year}-00`, date: String(a.year), text: `Création par ${esc(a.artists?.name)}` },
       a.certificate_issued_at && { sort: String(a.certificate_issued_at).slice(0, 10), date: fmtDate(a.certificate_issued_at), text: "Enregistrement au registre KEMETED et délivrance du certificat" },
@@ -68,7 +73,7 @@
             </dl>
           </div>
         </div>
-        <div id="verdict" class="p-verdict">${verdict("loading", "Vérification en cours…", "Interrogation du registre KEMETED.")}</div>
+        <div class="p-verdict"><div id="verdict">${verdict("loading", "Vérification en cours…", "Interrogation du registre KEMETED.")}</div><div id="intro-voice"></div></div>
         <div class="p-body">
 
           ${a.description ? `<section class="section"><h2>L'œuvre</h2>${a.description.split(/\n+/).map((t) => `<p>${esc(t)}</p>`).join("")}</section>` : ""}
@@ -93,7 +98,11 @@
               <p>${others.map((o) => `<a href="?id=${encodeURIComponent(o.id)}">${esc(o.title)}</a>`).join(" · ")}</p>` : ""}
           </section>
 
-          ${media.length ? `<section class="section" id="rencontre"><h2>Rencontre avec l'artiste</h2>${media.map(mediaPlayer).join("")}</section>` : ""}
+          ${media.length || locked.length ? `<section class="section" id="rencontre"><h2>Rencontre avec l'artiste</h2>
+            ${locked.map((m, i) => `<button type="button" class="locked-cta" data-locked="${i}">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+              <span>${esc(m.title)}<small>Réservé aux acquéreurs de l'œuvre · code requis</small></span></button>`).join("")}
+            <div style="margin-top:${locked.length ? "22px" : "0"}">${media.map(mediaPlayer).join("")}</div></section>` : ""}
 
           ${a.status === "vendue" ? `<section class="section no-print"><div class="owner-cta">
             <div><strong>Vous êtes propriétaire de cette œuvre ?</strong><div class="small muted">Message de l'artiste, making-of complet : vos contenus réservés.</div></div>
@@ -113,10 +122,15 @@
               ${a.dimensions ? `<div class="row"><span>Dimensions</span><span>${esc(a.dimensions)}</span></div>` : ""}
               ${a.certificate_issued_at ? `<div class="row"><span>Délivré le</span><span>${fmtDate(a.certificate_issued_at)}</span></div>` : ""}
               <div class="row"><span>Validation</span><span>KEMETED &amp; Association</span></div>
+              ${a.artists?.adagp ? `<div class="row"><span>Droits d'auteur</span><span>© ${esc(a.artists.name)} / ADAGP, Paris ${year}</span></div>` : ""}
               ${a.nft_token_id ? `
                 <div class="row"><span>Jumeau numérique (NFT)</span><span>Jeton n° ${esc(a.nft_token_id)} · ${esc(a.nft_chain === "base" ? "Base" : a.nft_chain === "base-sepolia" ? "Base Sepolia (test)" : a.nft_chain)}</span></div>
                 <div class="row"><span>Empreinte du certificat</span><span class="mono">${esc(a.certificate_hash)}</span></div>` : ""}
             </div>
+            ${a.artists?.signature_url || a.artists?.adagp ? `<div class="cert-sign">
+              ${a.artists?.signature_url ? `<div class="sig"><img src="${esc(a.artists.signature_url)}" alt="Signature manuscrite de ${esc(a.artists.name)}"><div>Signature de l'artiste</div></div>` : "<div></div>"}
+              ${a.artists?.adagp ? `<div class="adagp"><img src="../assets/adagp-logo.svg" alt="ADAGP"><div>Artiste membre de l'ADAGP</div></div>` : ""}
+            </div>` : ""}
             <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
               ${a.nft_token_id ? `<button class="btn" id="chain-btn">Vérifier sur la blockchain</button>` : ""}
               ${a.nft_tx && config.EXPLORER_URL ? `<a class="btn ghost" href="${config.EXPLORER_URL}/tx/${esc(a.nft_tx)}" target="_blank" rel="noopener">Voir la transaction</a>` : ""}
@@ -163,6 +177,30 @@
         out.textContent = "Lecture impossible : " + e.message;
       } finally { ev.target.disabled = false; }
     });
+    // ── Voix d'introduction : lancée à l'ouverture, texte écrit au fil de la voix ──
+    if (intro) mountVoice(document.getElementById("intro-voice"), intro, { autoplay: true, eyebrow: "Écouter l'artiste" });
+
+    // ── Contenus réservés : pavé numérique plein écran ──
+    document.querySelectorAll("[data-locked]").forEach((btn) => btn.addEventListener("click", () => {
+      const item = locked[Number(btn.dataset.locked)];
+      document.querySelectorAll("#intro-voice audio").forEach((x) => x.pause());
+      openKeypad({
+        title: item.title.split(" · ")[0],
+        subtitle: "Réservé aux acquéreurs de l'œuvre. Saisissez le code remis par KEMETED.",
+        onSubmit: async (code) => {
+          const r = await ownerUnlock(a.id, code);
+          if (r.ok) return r;
+          return { ok: false, message: r.error === "bloque" ? "Trop d'essais. Réessayez dans une heure." : "Code incorrect." };
+        },
+        onSuccess: (r, body) => {
+          const m = r.media.find((x) => x.title === item.title) || r.media[0];
+          body.innerHTML = `<div class="eyebrow" style="color:#d2a05e">Contenu réservé · ${esc(a.title)}</div><div id="kp-voice" style="margin-top:12px"></div>`;
+          if (m.kind === "audio") mountVoice(body.querySelector("#kp-voice"), m, { autoplay: true });
+          else body.querySelector("#kp-voice").innerHTML = mediaPlayer(m);
+        },
+      });
+    }));
+
     // ── Vérification d'authenticité ──
     const KEY = "kemeted-scan-" + a.id;
     const box = document.getElementById("verdict");

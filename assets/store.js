@@ -310,15 +310,26 @@ export async function newOwnerCode(artworkId) {
   }
   return check(await sb.rpc("new_owner_code", { p_artwork_id: artworkId }));
 }
-/** Contenus du propriétaire. Lève une erreur si le code est faux. */
-export async function ownerMedia(artworkId, code) {
+/** Contenus réservés. Renvoie { ok: true, media } ou { ok: false, error: "code" | "bloque", remaining }. */
+export async function ownerUnlock(artworkId, code) {
   if (DEMO) {
     ensureDemoMedia();
     const clean = String(code || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    if (!clean || demo.owner_codes[artworkId] !== clean) throw new Error("code invalide");
-    return listMedia(artworkId, { audience: "owner" });
+    if (!clean || demo.owner_codes[artworkId] !== clean) return { ok: false, error: "code" };
+    return { ok: true, media: await listMedia(artworkId, { audience: "owner" }) };
   }
-  const { data, error } = await sb.rpc("owner_media", { p_artwork_id: artworkId, p_code: code });
+  const { data, error } = await sb.rpc("owner_unlock", { p_artwork_id: artworkId, p_code: code });
   if (error) throw new Error(error.message);
   return data;
+}
+/** Fixe un code choisi (ex. 1756) — admin. */
+export async function setOwnerCode(artworkId, code) {
+  if (DEMO) { ensureDemoMedia(); demo.owner_codes[artworkId] = String(code).replace(/[^A-Za-z0-9]/g, "").toUpperCase(); persist(); return demo.owner_codes[artworkId]; }
+  return check(await sb.rpc("set_owner_code", { p_artwork_id: artworkId, p_code: code }));
+}
+/** Titres des contenus réservés (sans adresse) : pour afficher les boutons verrouillés. */
+export async function ownerMediaTitles(artworkId) {
+  if (DEMO) { ensureDemoMedia(); return demo.media.filter((x) => x.artwork_id === artworkId && x.audience === "owner").map(({ title, kind, role }) => ({ title, kind, role })); }
+  const { data } = await sb.rpc("owner_media_titles", { p_artwork_id: artworkId });
+  return data ?? [];
 }

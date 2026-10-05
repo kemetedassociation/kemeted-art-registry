@@ -13,7 +13,8 @@
   <main class="wrap" id="main" style="max-width:760px"><p class="muted" style="padding:60px 0">Chargement…</p></main>
   <script type="module">
     import { chrome, esc, mediaPlayer } from "../assets/ui.js";
-    import { getArtwork, ownerMedia } from "../assets/store.js";
+    import { mountVoice } from "../assets/voice.js";
+    import { getArtwork, ownerUnlock } from "../assets/store.js";
     chrome("../");
 
     const main = document.getElementById("main");
@@ -51,19 +52,21 @@
       };
 
       async function open(code) {
-        let media;
-        try { media = await ownerMedia(a.id, code); }
-        catch { try { localStorage.removeItem(KEY); } catch {} return showForm("Ce code ne correspond pas à cette œuvre."); }
+        let r;
+        try { r = await ownerUnlock(a.id, code); } catch { return showForm("Vérification impossible. Réessayez dans un instant."); }
+        if (!r.ok) { try { localStorage.removeItem(KEY); } catch {} return showForm(r.error === "bloque" ? "Trop d'essais. Réessayez dans une heure." : "Ce code ne correspond pas à cette œuvre."); }
+        const media = r.media;
         try { localStorage.setItem(KEY, code); } catch {}
         main.innerHTML = header + `
           <section class="section" style="margin-top:20px;border-top:0">
             <p style="font-family:var(--serif);font-size:1.35rem;line-height:1.4">Merci d'avoir accueilli cette œuvre. Voici les contenus que ${esc(a.artists?.name)} a préparés pour vous.</p>
           </section>
-          <section class="section">${media.length ? media.map(mediaPlayer).join("") : `<p class="muted">Aucun contenu pour le moment. Les messages de l'artiste apparaîtront ici dès qu'ils seront ajoutés.</p>`}</section>
+          <section class="section">${media.length ? media.map((m, i) => m.kind === "audio" && m.transcript ? `<div data-voice="${i}"></div>` : mediaPlayer(m)).join("") : `<p class="muted">Aucun contenu pour le moment. Les messages de l'artiste apparaîtront ici dès qu'ils seront ajoutés.</p>`}</section>
           <section class="section small muted">
             Ces contenus vous sont réservés : merci de ne pas partager votre code. En cas de revente, KEMETED remet un nouveau code au nouveau propriétaire.<br>
             <a href="../a/?id=${encodeURIComponent(a.id)}">← Fiche publique et certificat</a> · <a href="#" id="forget">Oublier ce code sur cet appareil</a>
           </section>`;
+        main.querySelectorAll("[data-voice]").forEach((el) => mountVoice(el, media[Number(el.dataset.voice)], { eyebrow: "Message de l'artiste" }));
         document.getElementById("forget").onclick = (e) => { e.preventDefault(); try { localStorage.removeItem(KEY); } catch {} showForm(); };
       }
 

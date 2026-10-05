@@ -252,7 +252,7 @@
           <h3>Médias de l'artiste</h3>
           ${media.length ? `<table class="list"><tbody>${media.map((m) => `<tr>
             <td>${m.kind === "audio" ? "Audio" : "Vidéo"}</td>
-            <td><b>${esc(m.title)}</b><div class="small muted">${m.audience === "owner" ? "Réservé au propriétaire" : "Public"}</div></td>
+            <td><b>${esc(m.title)}</b><div class="small muted">${m.role === "intro" ? "Intro, lancée à l'ouverture" : m.role === "achat" ? "Achat, derrière le pavé numérique" : m.audience === "owner" ? "Réservé au propriétaire" : "Public"}${m.transcript ? " · texte synchronisé" : ""}</div></td>
             <td><button type="button" class="btn small ghost" data-del-media="${esc(m.id)}">Retirer</button></td></tr>`).join("")}</tbody></table>`
             : `<p class="small muted">Aucun média. Ajoutez la présentation de l'artiste, le making-of, un message de remerciement.</p>`}
           <details><summary class="small"><b>Ajouter une vidéo ou un audio</b></summary>
@@ -262,6 +262,12 @@
                 <div><label>Type</label><select name="kind"><option value="video">Vidéo</option><option value="audio">Audio</option></select></div>
                 <div><label>Visible par</label><select name="audience"><option value="public">Tout le monde (fiche)</option><option value="owner">Le propriétaire seulement</option></select></div>
               </div>
+              <div><label>Rôle</label><select name="role">
+                <option value="">Média simple (section « Rencontre avec l'artiste »)</option>
+                <option value="intro">Intro : se lance à l'ouverture de la fiche, texte synchronisé (public)</option>
+                <option value="achat">Achat : derrière le pavé numérique, code requis (propriétaire)</option></select></div>
+              <div><label>Transcription pour le texte synchronisé : une phrase par ligne, précédée de son instant (ex. « 0:04 Cette œuvre s'appelle… »)</label>
+                <textarea name="transcript" placeholder="0:00 Bonjour, je suis…&#10;0:02 Cette œuvre s'appelle…"></textarea></div>
               <div><label>Lien YouTube / Vimeo (vidéo de plus de 50 Mo)</label><input name="url" type="url" placeholder="https://youtu.be/…"></div>
               <div><label>… ou fichier (moins de 50 Mo)</label><input name="file" type="file" accept="video/*,audio/*"></div>
               <p class="small muted" style="margin:0">Pour une vidéo réservée, mettez-la « non répertoriée » sur YouTube : seul le propriétaire verra le lien.</p>
@@ -273,12 +279,16 @@
           <h3>Espace propriétaire</h3>
           <a class="btn small ghost" href="kit/?id=${encodeURIComponent(a.id)}" target="_blank">Imprimer le kit acheteur (certificat + lettre)</a>
           ${ownerCode
-            ? `<p class="small">Code d'accès : <b class="mono" style="font-size:1rem">${esc(ownerCode.replace(/(.{4})(?=.)/g, "$1-"))}</b></p>
+            ? `<p class="small">Code d'accès : <b class="mono" style="font-size:1rem">${esc(ownerCode.length > 6 ? ownerCode.replace(/(.{4})(?=.)/g, "$1-") : ownerCode)}</b></p>
                <div><label>Lien à remettre à l'acheteur</label><code class="block" id="owner-link">${esc(ownerLink(ownerCode))}</code></div>
                <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="copy-owner">Copier le lien</button>
                <button type="button" class="btn small ghost" id="new-code">Nouveau code (après une revente)</button></div>`
             : `<p class="small muted">Générez un code pour donner à l'acheteur l'accès à ses contenus réservés.</p>
                <button type="button" class="btn small" id="new-code">Générer le code d'accès</button>`}
+          <form id="set-code-form" style="display:flex;gap:8px;align-items:end">
+            <div style="flex:1"><label>Choisir le code (4 à 20 chiffres ou lettres)</label><input name="code" inputmode="numeric" placeholder="ex. 1756" minlength="4" maxlength="20" required></div>
+            <button class="btn small ghost">Fixer</button></form>
+          <p class="small muted" style="margin:0">Après 10 codes faux en une heure, l'accès se bloque pendant une heure (protection contre les essais au hasard).</p>
         </div>
 
         <div class="panel stack">
@@ -326,7 +336,14 @@
             const poster = await store.videoPoster(file);
             if (poster) poster_url = await store.uploadMedia(poster, a.id, f.audience.value);
           }
-          await store.addMedia({ artwork_id: a.id, title: f.title.value.trim(), kind: f.kind.value, audience: f.audience.value, url, poster_url, position: media.length });
+          const role = f.role.value || null;
+          const audience = role === "achat" ? "owner" : role === "intro" ? "public" : f.audience.value;
+          const transcript = f.transcript.value.trim() ? f.transcript.value.trim().split(/\n+/).map((line) => {
+            const m = line.match(/^\s*(?:(\d+):)?(\d+(?:[.,]\d+)?)\s*[|\-–:]?\s*(.+)$/);
+            if (!m) throw new Error("Ligne de transcription illisible : « " + line + " »");
+            return { t: Number(m[1] || 0) * 60 + Number(m[2].replace(",", ".")), text: m[3].trim() };
+          }) : null;
+          await store.addMedia({ artwork_id: a.id, title: f.title.value.trim(), kind: f.kind.value, audience, role, transcript, url, poster_url, position: role === "intro" ? -1 : media.length });
           toast("Média ajouté"); route();
         });
       };
@@ -338,6 +355,11 @@
         if (ownerCode && !confirm("Créer un nouveau code ? L'ancien lien ne fonctionnera plus (à faire après une revente).")) return;
         busy(e.target, async () => { await store.newOwnerCode(a.id); toast("Code d'accès créé"); route(); });
       });
+      document.getElementById("set-code-form").onsubmit = (e) => {
+        e.preventDefault();
+        if (ownerCode && !confirm("Remplacer le code actuel ? L'ancien ne fonctionnera plus.")) return;
+        busy(e.submitter, async () => { await store.setOwnerCode(a.id, e.target.code.value); toast("Code fixé"); route(); });
+      };
       document.getElementById("copy-owner")?.addEventListener("click", async () => {
         try { await navigator.clipboard.writeText(ownerLink(ownerCode)); toast("Lien copié"); } catch { toast("Copie impossible : sélectionnez le lien à la main", true); }
       });
@@ -365,9 +387,17 @@
           <div><label>Biographie</label><textarea name="bio">${esc(x.bio)}</textarea></div>
           <div><label>Site web</label><input name="website" type="url" value="${esc(x.website)}"></div>
           <div><label>Instagram</label><input name="instagram" placeholder="@compte" value="${esc(x.instagram)}"></div>
+          <label class="check"><input type="checkbox" name="adagp" ${x.adagp ? "checked" : ""}> Membre de l'ADAGP (logo et mention © ADAGP sur le certificat et le NFT)</label>
+          <div><label>Signature manuscrite (PNG à fond transparent, de préférence)</label>
+            ${x.signature_url ? `<img src="${esc(x.signature_url)}" alt="" style="height:48px;background:#fff;border-radius:6px;padding:4px 8px;margin-bottom:6px">` : ""}
+            <input type="file" name="signature" accept="image/*"></div>
           <button class="btn small">${x.id ? "Enregistrer" : "Ajouter"}</button>
           ${x.id ? `<button type="button" class="btn small ghost" id="new-artist">Nouvel artiste</button>` : ""}`;
-        form.onsubmit = (e) => { e.preventDefault(); busy(e.submitter, async () => { await store.saveArtist({ ...formData(form), id: x.id }); toast("Artiste enregistré"); route(); }); };
+        form.onsubmit = (e) => { e.preventDefault(); busy(e.submitter, async () => {
+          const data = { ...formData(form), id: x.id };
+          if (form.signature.files[0]) data.signature_url = await store.uploadImage(form.signature.files[0], "artists");
+          await store.saveArtist(data); toast("Artiste enregistré"); route();
+        }); };
         document.getElementById("new-artist")?.addEventListener("click", () => fill());
       };
       fill();
