@@ -35,8 +35,12 @@
     // src=nfc : puce NFC simple (présentation), URL fixe sans signature : on l'accueille sans prétendre l'authentifier
     const fromSimpleChip = params.get("src") === "nfc";
     const main = document.getElementById("main");
-    // Après un scan (puce simple ou sécurisée) : écran d'accueil animé avec le titre et l'artiste
-    const splash = fromSimpleChip || (p && m) ? createSplash("../") : null;
+    // Écran d'accueil animé (titre + artiste) : après un scan, et à la première ouverture de la fiche
+    // dans la session, quelle que soit l'adresse écrite dans la puce. Pas de répétition au rechargement.
+    const SPLASH_KEY = "kemeted-splash-" + id;
+    let seen = false;
+    try { seen = sessionStorage.getItem(SPLASH_KEY) === "1"; sessionStorage.setItem(SPLASH_KEY, "1"); } catch {}
+    const splash = id && (fromSimpleChip || (p && m) || !seen) ? createSplash("../") : null;
 
     const a = id ? await getArtwork(id) : null;
     if (!a) {
