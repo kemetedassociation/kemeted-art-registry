@@ -14,6 +14,7 @@
     import { chrome, esc, fmtDate, fmtPrice, STATUS, mediaPlayer } from "../assets/ui.js";
     import { getArtwork, verifyScan, artworksByArtist, listMedia, ownerMediaTitles, ownerUnlock, DEMO } from "../assets/store.js";
     import { mountVoice, openKeypad } from "../assets/voice.js";
+    import { createSplash } from "../assets/splash.js";
     import { config } from "../assets/config.js";
     import { canonicalCertificate, certificateHash } from "../supabase/functions/_shared/certificate.js";
     chrome("../");
@@ -34,15 +35,19 @@
     // src=nfc : puce NFC simple (présentation), URL fixe sans signature : on l'accueille sans prétendre l'authentifier
     const fromSimpleChip = params.get("src") === "nfc";
     const main = document.getElementById("main");
+    // Après un scan (puce simple ou sécurisée) : écran d'accueil animé avec le titre et l'artiste
+    const splash = fromSimpleChip || (p && m) ? createSplash("../") : null;
 
     const a = id ? await getArtwork(id) : null;
     if (!a) {
       document.title = "Œuvre inconnue · KEMETED";
       main.innerHTML = `<div style="max-width:620px;padding:60px 0">${verdict("bad", "Cet identifiant n'existe pas dans le registre KEMETED",
         `Aucune œuvre n'est enregistrée sous la référence <span class="mono">${esc(id || "(vide)")}</span>. Si cette référence figure sur une œuvre, elle n'a pas été délivrée par KEMETED. Écrivez-nous à ${esc(config.CONTACT_EMAIL)}.`)}</div>`;
+      splash?.leave();
       throw new Error("introuvable");
     }
     document.title = `${a.title} · ${a.artists?.name ?? ""} · KEMETED`;
+    splash?.show(a);
 
     const statusPill = STATUS[a.status];
     const others = (await artworksByArtist(a.artist_id)).filter((x) => x.id !== a.id);
