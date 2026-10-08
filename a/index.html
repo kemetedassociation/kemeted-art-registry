@@ -2,7 +2,9 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12110f" media="(prefers-color-scheme: dark)">
   <meta name="referrer" content="no-referrer">
   <title>Passeport de l'œuvre · KEMETED</title>
   <link rel="icon" href="../assets/logo.png">
@@ -15,9 +17,12 @@
     import { getArtwork, verifyScan, artworksByArtist, listMedia, ownerMediaTitles, ownerUnlock, DEMO } from "../assets/store.js";
     import { mountVoice, openKeypad } from "../assets/voice.js";
     import { createSplash } from "../assets/splash.js";
+    import { registerOffline, keepOffline, verifyKemetedSignature, connectionBanner } from "../assets/offline.js";
     import { config } from "../assets/config.js";
     import { canonicalCertificate, certificateHash } from "../supabase/functions/_shared/certificate.js";
     chrome("../");
+    registerOffline("../");
+    connectionBanner();
 
     const ICON = {
       good: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
@@ -42,7 +47,14 @@
     try { seen = sessionStorage.getItem(SPLASH_KEY) === "1"; sessionStorage.setItem(SPLASH_KEY, "1"); } catch {}
     const splash = id && (fromSimpleChip || (p && m) || !seen) ? createSplash("../") : null;
 
-    const a = id ? await getArtwork(id) : null;
+    let a = null;
+    try { a = id ? await getArtwork(id) : null; }
+    catch {
+      splash?.leave();
+      main.innerHTML = `<div style="max-width:620px;padding:60px 0">${verdict("info", "Pas de connexion internet",
+        "Cette fiche n'a pas encore été enregistrée sur ce téléphone. Ouvrez-la une fois avec internet : elle restera ensuite consultable hors ligne, certificat compris.")}</div>`;
+      throw new Error("hors ligne");
+    }
     if (!a) {
       document.title = "Œuvre inconnue · KEMETED";
       main.innerHTML = `<div style="max-width:620px;padding:60px 0">${verdict("bad", "Cet identifiant n'existe pas dans le registre KEMETED",
@@ -52,6 +64,7 @@
     }
     document.title = `${a.title} · ${a.artists?.name ?? ""} · KEMETED`;
     splash?.show(a);
+    const sigOk = await verifyKemetedSignature(a); // vérifiée sur le téléphone, fonctionne sans internet
 
     const statusPill = STATUS[a.status];
     const others = (await artworksByArtist(a.artist_id)).filter((x) => x.id !== a.id);
@@ -131,6 +144,7 @@
               ${a.dimensions ? `<div class="row"><span>Dimensions</span><span>${esc(a.dimensions)}</span></div>` : ""}
               ${a.certificate_issued_at ? `<div class="row"><span>Délivré le</span><span>${fmtDate(a.certificate_issued_at)}</span></div>` : ""}
               <div class="row"><span>Validation</span><span>KEMETED &amp; Association</span></div>
+              ${sigOk !== null ? `<div class="row"><span>Signature numérique KEMETED</span><span style="color:${sigOk ? "var(--good)" : "var(--bad)"}">${sigOk ? "✓ Vérifiée sur cet appareil, même hors ligne" : "✗ Invalide"}</span></div>` : ""}
               ${a.artists?.adagp ? `<div class="row"><span>Droits d'auteur</span><span>© ${esc(a.artists.name)} / ADAGP, Paris ${year}</span></div>` : ""}
               ${a.nft_token_id ? `
                 <div class="row"><span>Jumeau numérique (NFT)</span><span>Jeton n° ${esc(a.nft_token_id)} · ${esc(a.nft_chain === "base" ? "Base" : a.nft_chain === "base-sepolia" ? "Base Sepolia (test)" : a.nft_chain)}</span></div>
@@ -216,6 +230,11 @@
     let r;
     if (p && m) {
       r = await verifyScan(a.id, p, m).catch(() => ({ status: "erreur" }));
+      if (r.status === "erreur" && !navigator.onLine) {
+        // Pas de réseau : on garde le code de la puce et on le vérifie dès le retour de la connexion
+        try { localStorage.setItem("kemeted-pending-" + a.id, JSON.stringify({ p, m })); } catch {}
+        r = { status: "hors_ligne" };
+      }
       // Seul un scan authentique est mémorisé (30 min) : une alerte ne doit pas coller à la fiche
       try { if (r.status === "authentique") sessionStorage.setItem(KEY, JSON.stringify({ ...r, at: Date.now() })); else sessionStorage.removeItem(KEY); } catch {}
       // On retire le code à usage unique de l'adresse : un rechargement ou un partage ne le rejoue pas
@@ -224,11 +243,15 @@
       let recent = null;
       try { recent = JSON.parse(sessionStorage.getItem(KEY)); } catch {}
       r = recent?.status === "authentique" && Date.now() - recent.at < 30 * 60e3 ? { ...recent, cached: true } : await verifyScan(a.id).catch(() => ({ status: "erreur" }));
+      if (r.status === "erreur" && !navigator.onLine) r = { status: "hors_ligne" };
       if (fromSimpleChip) {
         if (r.status === "qr") r = { status: "puce_simple" };
         history.replaceState(null, "", `?id=${encodeURIComponent(a.id)}`); // un lien partagé n'affiche pas ce message
       }
     }
+    let lastStatus = r.status;
+    const renderVerdict = (r) => {
+    lastStatus = r.status;
     const ago = r.cached ? ` (vérifiée il y a ${Math.max(1, Math.round((Date.now() - r.at) / 60e3))} min)` : "";
     box.innerHTML = {
       authentique: verdict("good", "Œuvre authentifiée par KEMETED" + ago,
@@ -247,7 +270,30 @@
         `La puce scannée est enregistrée pour l'œuvre <a href="?id=${encodeURIComponent(r.registered_artwork_id ?? "")}" class="mono">${esc(r.registered_artwork_id)}</a>, pas pour celle-ci. Il peut s'agir d'une copie.`),
       revoquee: verdict("warn", "Puce désactivée",
         "Cette puce a été désactivée par KEMETED (perte, remplacement ou signalement). La fiche reste consultable, mais l'authenticité doit être confirmée par KEMETED."),
+      hors_ligne: sigOk
+        ? verdict("nfc", "Hors connexion · certificat KEMETED vérifié",
+            `${esc(a.title)}, ${esc(a.artists?.name)}. Sans internet, ce téléphone a vérifié la signature numérique KEMETED du certificat de l'œuvre. Le contrôle anti-copie de la puce se fera automatiquement dès le retour de la connexion.`)
+        : verdict("info", "Hors connexion · fiche enregistrée sur ce téléphone",
+            "Vous consultez la fiche gardée en mémoire. La vérification complète se fera dès le retour de la connexion."),
     }[r.status] ?? verdict("warn", "Vérification indisponible", "Le registre n'a pas pu être joint. Réessayez dans un instant.");
+    };
+    renderVerdict(r);
+
+    // Retour de la connexion : on vérifie le code de puce gardé, ou on relance la vérification normale
+    addEventListener("online", async () => {
+      let pending = null;
+      try { pending = JSON.parse(localStorage.getItem("kemeted-pending-" + a.id)); } catch {}
+      if (!pending && lastStatus !== "hors_ligne") return;
+      const again = await verifyScan(a.id, pending?.p, pending?.m).catch(() => null);
+      if (!again) return;
+      try { localStorage.removeItem("kemeted-pending-" + a.id); } catch {}
+      if (again.status === "authentique") try { sessionStorage.setItem(KEY, JSON.stringify({ ...again, at: Date.now() })); } catch {}
+      renderVerdict(again.status === "qr" && fromSimpleChip ? { status: "puce_simple" } : again);
+    });
+
+    // Garde sur le téléphone, en entier, ce qu'il faut pour rouvrir la fiche sans internet
+    keepOffline([a.image_url, ...(a.detail_images || []), a.artists?.signature_url, intro?.url, ...allPublic.map((x) => x.poster_url)],
+      () => Promise.all([getArtwork(a.id), listMedia(a.id, { audience: "public" }), artworksByArtist(a.artist_id)]));
 
   </script>
 </body>

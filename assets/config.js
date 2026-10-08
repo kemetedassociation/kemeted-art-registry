@@ -11,6 +11,9 @@ export const config = {
   EXPLORER_URL: "https://sepolia.basescan.org", // https://basescan.org en production
 
   CONTACT_EMAIL: "kemeted.association@gmail.com",
+
+  // Clé PUBLIQUE KEMETED : vérifie sur le téléphone, même sans internet, que le certificat a été signé par KEMETED
+  OFFLINE_PUBLIC_KEY: {"kty": "EC", "crv": "P-256", "x": "-1POrxBInBZfJREVz95EZfcM9nO990n04LNvuJqlhYM", "y": "nLJj_uoSPvV6vV4LvolVeg_AGJPfzbNhQPRJ_2STwFY"},
 };
 
 export const DEMO = !config.SUPABASE_URL;

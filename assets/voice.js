@@ -53,7 +53,8 @@ export function mountVoice(host, media, { autoplay = false, eyebrow = "" } = {})
       p.classList.add("on");
       p.classList.toggle("now", t < end);
       p.classList.toggle("done", k >= 1 && t >= end);
-      if (t < end && current !== i) { current = i; p.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+      // Fait défiler uniquement le cadre du texte, jamais la page : le visiteur garde la main sur son défilement
+      if (t < end && current !== i) { current = i; box.scrollTo({ top: Math.max(0, p.offsetTop - box.clientHeight + p.offsetHeight + 8), behavior: "smooth" }); }
     });
     if (!audio.paused) raf = requestAnimationFrame(render);
   };

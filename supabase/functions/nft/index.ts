@@ -8,7 +8,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { createPublicClient, createWalletClient, http, isAddress, parseAbi, parseEventLogs } from "npm:viem@2";
 import { privateKeyToAccount } from "npm:viem@2/accounts";
 import { base, baseSepolia } from "npm:viem@2/chains";
-import { certificateHash } from "../_shared/certificate.js";
+import { canonicalCertificate, certificateHash } from "../_shared/certificate.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +66,17 @@ Deno.serve(async (req) => {
       const [event] = parseEventLogs({ abi, logs: receipt.logs, eventName: "ArtworkRegistered" });
       const tokenId = event.args.tokenId.toString();
 
+      // Signature KEMETED du certificat, vérifiable hors ligne sur le téléphone du visiteur
+      let offline_signature: string | null = null;
+      const jwk = Deno.env.get("OFFLINE_SIGNING_KEY_JWK");
+      if (jwk) {
+        const key = await crypto.subtle.importKey("jwk", JSON.parse(jwk), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+        const msg = canonicalCertificate({ ...art, artist_name: art.artists.name, certificate_issued_at: issuedAt });
+        const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(msg)));
+        offline_signature = btoa(String.fromCharCode(...sig)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      }
       const { error } = await db.from("artworks").update({
+        offline_signature,
         certificate_issued_at: issuedAt, certificate_hash: hash,
         nft_chain: chainName, nft_contract: contract, nft_token_id: tokenId, nft_tx: txHash,
         nft_minted_at: new Date().toISOString(),

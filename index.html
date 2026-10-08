@@ -2,7 +2,9 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12110f" media="(prefers-color-scheme: dark)">
   <title>KEMETED Art Registry</title>
   <meta name="description" content="Le registre numérique des œuvres accompagnées par KEMETED : chaque œuvre a son passeport, son certificat et son jumeau numérique.">
   <link rel="icon" href="assets/logo.png">
@@ -20,6 +22,8 @@
   <script type="module">
     import { chrome, esc, STATUS } from "./assets/ui.js";
     import { listArtworks } from "./assets/store.js";
+    import { registerOffline } from "./assets/offline.js";
+    registerOffline("./");
     chrome("");
     const works = await listArtworks();
     document.getElementById("cards").innerHTML = works.length ? works.map((a) => `
