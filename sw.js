@@ -1,11 +1,11 @@
 // Service worker du registre KEMETED : la fiche d'une œuvre reste consultable sans internet
 // sur un téléphone qui l'a déjà ouverte une fois avec connexion (photo, textes, certificat, audio d'intro).
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `kar-shell-${VERSION}`, DATA = `kar-data-${VERSION}`, MEDIA = `kar-media-${VERSION}`;
 const SHELL_FILES = [
   "./", "index.html", "a/", "a/index.html", "proprietaire/", "proprietaire/index.html",
   "assets/style.css", "assets/ui.js", "assets/store.js", "assets/config.js", "assets/demo-data.js",
-  "assets/voice.js", "assets/splash.js", "assets/offline.js", "assets/logo.png", "assets/adagp-logo.svg",
+  "assets/voice.js", "assets/splash.js", "assets/offline.js", "assets/kemeted-ecosysteme.js", "assets/logo.png", "assets/adagp-logo.svg",
   "supabase/functions/_shared/certificate.js", "supabase/functions/_shared/sun.js",
 ];
 
